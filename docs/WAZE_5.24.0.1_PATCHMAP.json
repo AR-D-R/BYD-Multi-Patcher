@@ -1,0 +1,170 @@
+[
+  {
+    "dex": "classes5.dex",
+    "offset": 4666640,
+    "before": "dd09104038090400528f41ad01f72200861b76083ad600001100000001000100000000003e03490003000000520040ad0f00000001000100000000003e03490003000000520041ad0f00000001000100000000003e0349000300000052003bad0f00000001000100000000003e0349000300000052003ead",
+    "after": "52873baddb0707050000000000002200861b76083ad600001100000001000100000000003e03490003000000520040ad0f00000001000100000000003e03490003000000520041ad0f00000001000100000000003e0349000300000052003bad0f00000001000100000000003e0349000300000013000000",
+    "desc": "main map geometry"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3509888,
+    "before": "70100ef502006200d20b6e10c42c00000c001a01fa6371201bef10005b201b310e00",
+    "after": "70100ef502006200d20b62018d476e200c2c10006e10c42c00000c005b201b310e00",
+    "desc": "audio startup off"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3568356,
+    "before": "a90300000a023802080012f21a03fd567140ab030132721009230c000c0212061237120312047706c00302000c0162024f45713011ec2b030c02150390c1150440c171302d0332040c037210a00305000c02620448006e108f0304000c0433420c002202cf161304120070208dc342007220a70325001f02d8217220930315000a04d500800333900300280201a8960004087210a00305000c0439000a00620048006e108f0300000c0033040a002204fa17704038c814ed7220a70345001f04d821126612077706890402007100a90300000a0e380e09007100aa03",
+    "after": "a9030000721009230c000c0212061237120312047706c00302000c0162024f45713011ec2b030c0215030d3f7140ffff32660c026204ffff6e10ffff04000c041228715affff42860c02150340c11504c0c17130ffff32040c032202cf161304120070208dc342001f02d82112180000000000000000000000007220930315000a04d500800333900300280201a8960004087210a00305000c0439000a00620048006e108f0300000c0033040a002204fa17704038c814ed7220a70345001f04d8211266120777068904020000000000000000000000000000000000",
+    "desc": "centred speedometer (weighted two-section midpoint + -12dp X trim, lowered to -24dp Y)",
+    "dynamic_refs": [
+      "SizeKt.fillMaxWidth$default",
+      "Alignment.Companion",
+      "Alignment.getCenterHorizontally",
+      "SizeKt.wrapContentWidth$default",
+      "OffsetKt.offset-VpY3zN4"
+    ]
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3648540,
+    "before": "803f",
+    "after": "e63e",
+    "desc": "panel ratio 1",
+    "search_anchor": "0200131a00001517803f1318000077063d03",
+    "patch_offset_in_anchor": 8
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3659456,
+    "before": "3d030400",
+    "after": "00000000",
+    "desc": "safe area nav start",
+    "search_anchor": "83000a03150a80413d03040001a3280201837120",
+    "patch_offset_in_anchor": 8
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3659474,
+    "before": "3d070300",
+    "after": "00000000",
+    "desc": "safe area nav end",
+    "search_anchor": "71207a0487000a073d0703002802018a62073e00",
+    "patch_offset_in_anchor": 8
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3674608,
+    "before": "8229150a003fc8a9150a804172207504ab000a052200c11c711021ef09000a041207",
+    "after": "db04010500000000150a804172207504ab000a052200c11c01470000000000000000",
+    "desc": "map geometry coroutine"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3750008,
+    "before": "3d020500",
+    "after": "00000000",
+    "desc": "safe area preview start",
+    "search_anchor": "71207a04a5000a023d02050015058041280201a5",
+    "patch_offset_in_anchor": 8
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3750050,
+    "before": "803f",
+    "after": "e63e",
+    "desc": "panel ratio 2",
+    "search_anchor": "0c1513180200131900001516803f1317000077063d0314000c02",
+    "patch_offset_in_anchor": 12
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3750156,
+    "before": "3d010500",
+    "after": "00000000",
+    "desc": "safe area preview end",
+    "search_anchor": "71207a04ac000a013d01050015058041280201a5",
+    "patch_offset_in_anchor": 8
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3761520,
+    "before": "722091035a000a06b661",
+    "after": "db0509031216b6610000",
+    "desc": "overview vehicle anchor"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3834198,
+    "before": "620157451203713011ec19030c03",
+    "after": "1501a04100007120350319000c03",
+    "desc": "vehicle type pill"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3917050,
+    "before": "1205713029ef56010a05",
+    "after": "1405295c0f3f00000000",
+    "desc": "active viewport"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3658470,
+    "before": "0754076512060178120701891208021009001209081e040002011000072408022200",
+    "after": "081e05000765017112061508804171302d0365080c05120712081209072408022200",
+    "desc": "NavigationInstructionsBarColumn input modifier: fixed +16dp Y offset"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3660772,
+    "before": "e1020006e103000ce1000009dd02027096021302d5338003b6329500001296100200",
+    "after": "1202150480417130ffff2d040c0d1310000000000000000000000000000000000000",
+    "desc": "live top-right ButtonPack after TopEnd alignment: +16dp Y offset",
+    "dynamic_refs": [
+      "OffsetKt.offset-VpY3zN4"
+    ]
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3667916,
+    "before": "13180e001319000015148041131500001316000013170000",
+    "after": "13180c001319000015148041151580411316000013170000",
+    "desc": "optional CompassV1: preserve 16dp start padding and add 16dp top padding"
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3759972,
+    "before": "62004b001f00950171404203b05f0c001233120a71554c03503a0c00",
+    "after": "62004b0071404203b05f0c00150380417130ffffb0030c00120a1233",
+    "desc": "Landscape pre-drive menu/notification Box +16dp Y",
+    "dynamic_refs": [
+      "OffsetKt.offset-VpY3zN4"
+    ]
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3761382,
+    "before": "15150700951504151f08d7210213150002150d00020d13000213040007b402160c00080b1c0007ac078a07181211",
+    "after": "1f08d7210213040002150d0007b402160c00080b1c0007ac078a0718120d150180417130ffffd8010c0812110000",
+    "desc": "Landscape pre-drive ButtonPack +16dp Y",
+    "dynamic_refs": [
+      "OffsetKt.offset-VpY3zN4"
+    ]
+  },
+  {
+    "dex": "classes6.dex",
+    "offset": 3766486,
+    "before": "62084b001f089501620b4a006e10db030b000c0b72302403810b0c0e13130e0013140000150f8041131000001311000013120000770739030e00",
+    "after": "620e4b0013130c0013140000150f804113100000381d040015108041131100001312000000000000000000000000000000000000770739030e00",
+    "desc": "Pre-drive compass +16dp top padding in landscape only"
+  },
+  {
+    "dex": "classes7.dex",
+    "offset": 4300488,
+    "before": "380005001500dc420f001500a0420f00",
+    "after": "380005001500dc420f00150070420f00",
+    "desc": "start drawer"
+  }
+]

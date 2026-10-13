@@ -10,8 +10,8 @@ android {
         applicationId 'com.bydspotifymanager.app'
         minSdk 28
         targetSdk 35
-        versionCode 27
-        versionName '1.0'
+        versionCode 200
+        versionName '2.0'
     }
 
     buildTypes {
@@ -33,14 +33,17 @@ android {
     }
 
     // dexLhsHook generates build/generated/lhsHookAssets/lhs_hook/classes.dex.
-    // The Manager then injects that tiny standalone DEX as Spotify classes15.dex
+    // The Manager then injects that tiny standalone DEX as Spotify classes16.dex
     // only when the LHS player option is selected.
     sourceSets {
         main {
             assets.srcDir("$buildDir/generated/lhsHookAssets")
+            assets.srcDir("$buildDir/generated/autoResumeAssets")
+            assets.srcDir("$buildDir/generated/abrpDirectHookAssets")
         }
     }
 }
+
 
 def hookSrcDir = file("$projectDir/hooksrc")
 def hookClassesDir = layout.buildDirectory.dir('lhsHook/classes')
@@ -106,7 +109,167 @@ tasks.register('dexLhsHook', Exec) {
     }
 }
 
-tasks.named('preBuild').configure { dependsOn 'dexLhsHook' }
+
+// Robust Spotify vehicle-restart resume helper. The helper is compiled as a tiny standalone
+// DEX and injected into both Spotify 8.9 and 9.1. It deliberately uses only Android framework
+// media APIs, so it has no dependency on the Manager APK at runtime.
+def autoResumeSrcDir = file("$projectDir/autoresumesrc")
+def autoResumeClassesDir = layout.buildDirectory.dir('autoResume/classes')
+def autoResumeJarFile = layout.buildDirectory.file('autoResume/auto_resume.jar')
+def autoResumeAssetsDir = layout.buildDirectory.dir('generated/autoResumeAssets/auto_resume')
+
+tasks.register('compileAutoResume', JavaCompile) {
+    source = fileTree(autoResumeSrcDir) { include '**/*.java' }
+    classpath = files(new File(android.sdkDirectory, 'platforms/android-35/android.jar'))
+    destinationDirectory.set(autoResumeClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarAutoResume', Jar) {
+    dependsOn 'compileAutoResume'
+    archiveFileName.set('auto_resume.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('autoResume'))
+    from(autoResumeClassesDir)
+}
+
+tasks.register('dexAutoResume', Exec) {
+    dependsOn 'jarAutoResume'
+    inputs.file(autoResumeJarFile)
+    outputs.file(layout.buildDirectory.file('generated/autoResumeAssets/auto_resume/classes.dex'))
+    doFirst {
+        File sdk = android.sdkDirectory
+        boolean isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        String d8Name = isWindows ? 'd8.bat' : 'd8'
+        File buildToolsRoot = new File(sdk, 'build-tools')
+        File[] candidates = buildToolsRoot.listFiles({ File f -> new File(f, d8Name).isFile() } as FileFilter)
+        if (candidates == null || candidates.length == 0) {
+            throw new GradleException("Android SDK build-tools with ${d8Name} were not found under ${buildToolsRoot}")
+        }
+        Arrays.sort(candidates, { File a, File b -> a.name <=> b.name } as Comparator<File>)
+        File d8 = new File(candidates[candidates.length - 1], d8Name)
+        File outDir = autoResumeAssetsDir.get().asFile
+        if (outDir.exists() && !outDir.deleteDir()) {
+            throw new GradleException("Could not clean AutoResume output directory: ${outDir}")
+        }
+        outDir.mkdirs()
+        File androidJar = new File(sdk, 'platforms/android-35/android.jar')
+        if (!androidJar.isFile()) {
+            throw new GradleException('Android 35 platform is required to build the AutoResume helper')
+        }
+        if (isWindows) {
+            commandLine 'cmd', '/c', d8.absolutePath,
+                    '--release', '--min-api', '28', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, autoResumeJarFile.get().asFile.absolutePath
+        } else {
+            commandLine d8.absolutePath,
+                    '--release', '--min-api', '28', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, autoResumeJarFile.get().asFile.absolutePath
+        }
+    }
+    doLast {
+        File dex = new File(autoResumeAssetsDir.get().asFile, 'classes.dex')
+        if (!dex.isFile() || dex.length() < 512) {
+            throw new GradleException('AutoResume helper DEX was not generated')
+        }
+    }
+}
+
+
+def abrpDirectHookSrcDir = file("$projectDir/abrpdirecthooksrc")
+def abrpDirectHookStubSrcDir = file("$projectDir/abrpdirecthookstubs")
+def abrpDirectHookStubClassesDir = layout.buildDirectory.dir('abrpDirectHookStub/classes')
+def abrpDirectHookStubJarFile = layout.buildDirectory.file('abrpDirectHookStub/abrp_direct_stub.jar')
+def abrpDirectHookClassesDir = layout.buildDirectory.dir('abrpDirectHook/classes')
+def abrpDirectHookJarFile = layout.buildDirectory.file('abrpDirectHook/abrp_direct_hook.jar')
+def abrpDirectHookAssetsDir = layout.buildDirectory.dir('generated/abrpDirectHookAssets/abrp_direct_hook')
+
+tasks.register('compileAbrpDirectHookStub', JavaCompile) {
+    source = fileTree(abrpDirectHookStubSrcDir) { include '**/*.java' }
+    classpath = files(new File(android.sdkDirectory, 'platforms/android-35/android.jar'))
+    destinationDirectory.set(abrpDirectHookStubClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarAbrpDirectHookStub', Jar) {
+    dependsOn 'compileAbrpDirectHookStub'
+    archiveFileName.set('abrp_direct_stub.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('abrpDirectHookStub'))
+    from(abrpDirectHookStubClassesDir)
+}
+
+tasks.register('compileAbrpDirectHook', JavaCompile) {
+    dependsOn 'jarAbrpDirectHookStub'
+    source = fileTree(abrpDirectHookSrcDir) { include '**/*.java' }
+    classpath = files(
+            new File(android.sdkDirectory, 'platforms/android-35/android.jar'),
+            abrpDirectHookStubJarFile
+    )
+    destinationDirectory.set(abrpDirectHookClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarAbrpDirectHook', Jar) {
+    dependsOn 'compileAbrpDirectHook'
+    archiveFileName.set('abrp_direct_hook.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('abrpDirectHook'))
+    from(abrpDirectHookClassesDir)
+}
+
+tasks.register('dexAbrpDirectHook', Exec) {
+    dependsOn 'jarAbrpDirectHook', 'jarAbrpDirectHookStub'
+    inputs.file(abrpDirectHookJarFile)
+    outputs.file(layout.buildDirectory.file('generated/abrpDirectHookAssets/abrp_direct_hook/classes.dex'))
+    doFirst {
+        File sdk = android.sdkDirectory
+        boolean isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        String d8Name = isWindows ? 'd8.bat' : 'd8'
+        File buildToolsRoot = new File(sdk, 'build-tools')
+        File[] candidates = buildToolsRoot.listFiles({ File f -> new File(f, d8Name).isFile() } as FileFilter)
+        if (candidates == null || candidates.length == 0) {
+            throw new GradleException("Android SDK build-tools with ${d8Name} were not found under ${buildToolsRoot}")
+        }
+        Arrays.sort(candidates, { File a, File b -> a.name <=> b.name } as Comparator<File>)
+        File d8 = new File(candidates[candidates.length - 1], d8Name)
+        File outDir = abrpDirectHookAssetsDir.get().asFile
+        if (outDir.exists() && !outDir.deleteDir()) {
+            throw new GradleException("Could not clean ABRP direct telemetry hook output directory: ${outDir}")
+        }
+        outDir.mkdirs()
+        File androidJar = new File(sdk, 'platforms/android-35/android.jar')
+        File stubJar = abrpDirectHookStubJarFile.get().asFile
+        if (!androidJar.isFile() || !stubJar.isFile()) {
+            throw new GradleException('Android 35 platform and ABRP compile stubs are required to build the direct telemetry hook')
+        }
+        if (isWindows) {
+            commandLine 'cmd', '/c', d8.absolutePath,
+                    '--release', '--min-api', '28',
+                    '--lib', androidJar.absolutePath,
+                    '--lib', stubJar.absolutePath,
+                    '--output', outDir.absolutePath, abrpDirectHookJarFile.get().asFile.absolutePath
+        } else {
+            commandLine d8.absolutePath,
+                    '--release', '--min-api', '28',
+                    '--lib', androidJar.absolutePath,
+                    '--lib', stubJar.absolutePath,
+                    '--output', outDir.absolutePath, abrpDirectHookJarFile.get().asFile.absolutePath
+        }
+    }
+    doLast {
+        File dex = new File(abrpDirectHookAssetsDir.get().asFile, 'classes.dex')
+        if (!dex.isFile() || dex.length() < 256) {
+            throw new GradleException('ABRP direct telemetry hook DEX was not generated')
+        }
+    }
+}
+
+
+tasks.named('preBuild').configure { dependsOn 'dexLhsHook', 'dexAutoResume', 'dexAbrpDirectHook' }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.1'
@@ -115,3 +278,4 @@ dependencies {
     implementation 'com.android.tools.build:apksig:8.13.2'
     implementation 'com.github.luben:zstd-jni:1.5.6-9@aar'
 }
+

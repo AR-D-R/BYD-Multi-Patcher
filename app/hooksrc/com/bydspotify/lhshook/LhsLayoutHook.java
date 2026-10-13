@@ -9,7 +9,7 @@ import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 
 /**
- * Runtime large-screen LHS transform for Spotify 9.1.78.2215.
+ * Runtime large-screen LHS transform validated against Spotify 9.1.82.2161.
  *
  * Spotify's ConstraintLayout graph and its collapsed/expanded state machine stay
  * completely stock. Instead of translating individual surfaces after each stock
@@ -28,7 +28,9 @@ import android.widget.FrameLayout;
  * brief stock-RHS flash that the earlier 50 ms translation poll could expose.
  */
 public final class LhsLayoutHook extends FrameLayout implements ViewTreeObserver.OnPreDrawListener {
-    private static final int ID_DISPLAY_CUTOUT_START = 0x7f0b04a6;
+    // Spotify 9.1.82.2161 resource ID. 9.1.78 used 0x7f0b04a6; the ID moved
+    // to 0x7f0b0498 in 9.1.82 even though the layout role/name is unchanged.
+    private static final int ID_DISPLAY_CUTOUT_START = 0x7f0b0498;
 
     private ViewGroup mirroredRoot;
     private boolean active;

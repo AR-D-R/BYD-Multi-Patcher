@@ -9,7 +9,7 @@ final class ApkSignerUtil {
     static void sign(File unsignedApk, File signedApk) throws Exception {
         SigningKeyStore.KeyMaterial km = SigningKeyStore.getOrCreate();
         ApkSigner.SignerConfig signer = new ApkSigner.SignerConfig.Builder(
-                "BYD Spotify Manager",
+                "BYD Multi Patcher",
                 km.privateKey,
                 Collections.singletonList(km.certificate)).build();
         new ApkSigner.Builder(Collections.singletonList(signer))

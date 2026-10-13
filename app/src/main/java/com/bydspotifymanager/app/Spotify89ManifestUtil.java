@@ -123,6 +123,13 @@ final class Spotify89ManifestUtil {
         int prefix=rootHs+meta.size, total=prefix; for(byte[] c:chunks)total+=c.length; byte[] out=new byte[total]; System.arraycopy(data,0,out,0,prefix); int p=prefix; for(byte[] c:chunks){System.arraycopy(c,0,out,p,c.length);p+=c.length;} Spotify89BinaryUtil.put32(out,4,out.length); return out;
     }
 
+    static byte[] disableAutoResumeTrigger(byte[] manifest) {
+        String from="byd.intent.action.RESTORE_PLAYBACK";
+        String to="byd.intent.action.RESTORE_DISABLED";
+        if(from.length()!=to.length())throw new IllegalStateException("AutoResume action replacement must preserve string length");
+        return Spotify89BinaryUtil.replaceXmlStrings(manifest,Collections.singletonMap(from,to));
+    }
+
     static PortraitResult patchPortraitOrientations(byte[] data) {
         int rootHs=Spotify89BinaryUtil.u16(data,2); Spotify89BinaryUtil.Pool meta=Spotify89BinaryUtil.parsePool(data,rootHs); List<String> strings=meta.strings; int prefix=rootHs+meta.size, o=prefix, count=0; List<byte[]> chunks=new ArrayList<>();
         while(o<data.length){ int typ=Spotify89BinaryUtil.u16(data,o), sz=Spotify89BinaryUtil.i32(data,o+4); if(sz<8||o+sz>data.length)throw new IllegalArgumentException("Bad manifest chunk"); byte[] c=Arrays.copyOfRange(data,o,o+sz);

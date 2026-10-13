@@ -7,6 +7,7 @@ import java.util.*;
 final class Spotify89DexUtil {
     private static final String OLD_PACKAGE="com.spotify.music";
     private static final String HELPER_BASE_PACKAGE="com.spotify.musib";
+    private static final String AUTO_RESUME_BASE_PACKAGE="com.spotify.musia";
     private static final LinkedHashMap<Target,Integer> ORIENTATION_TARGETS=new LinkedHashMap<>();
     static {
         ORIENTATION_TARGETS.put(new Target("Lcom/spotify/lyrics/fullscreenview/page/LyricsFullscreenPageActivity;","onCreate"),1);
@@ -37,6 +38,12 @@ final class Spotify89DexUtil {
         if(targetPackage.length()!=HELPER_BASE_PACKAGE.length())throw new IllegalArgumentException("Helper package replacement length mismatch");
         byte[] out=IoUtil.replaceSameLength(dex,HELPER_BASE_PACKAGE.getBytes(StandardCharsets.US_ASCII),targetPackage.getBytes(StandardCharsets.US_ASCII));
         out=IoUtil.replaceSameLength(out,HELPER_BASE_PACKAGE.replace('.','/').getBytes(StandardCharsets.US_ASCII),targetPackage.replace('.','/').getBytes(StandardCharsets.US_ASCII));
+        return DexUtil.repair(out);
+    }
+    static byte[] retargetAutoResumeDex(byte[] dex,String targetPackage)throws Exception{
+        if(targetPackage.length()!=AUTO_RESUME_BASE_PACKAGE.length())throw new IllegalArgumentException("AutoResume package replacement length mismatch");
+        byte[] out=IoUtil.replaceSameLength(dex,AUTO_RESUME_BASE_PACKAGE.getBytes(StandardCharsets.US_ASCII),targetPackage.getBytes(StandardCharsets.US_ASCII));
+        out=IoUtil.replaceSameLength(out,AUTO_RESUME_BASE_PACKAGE.replace('.','/').getBytes(StandardCharsets.US_ASCII),targetPackage.replace('.','/').getBytes(StandardCharsets.US_ASCII));
         return DexUtil.repair(out);
     }
 

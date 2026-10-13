@@ -1,3 +1,11 @@
 <resources>
-    <string name="app_name">BYD Spotify Manager</string>
+    <string name="app_name">BYD Multi Patcher</string>
+    <string name="waze_widescreen_details">Wide-screen changes:\n• Centres the car and speedometer.\n• Makes the navigation panel narrower to show more map.\n• Moves top controls below thick system bars.\n• Improves route preview and overview placement.\n• Keeps the search drawer smaller when collapsed.\n\nThe EV option turns on Waze’s EV setting and selects CCS2, allowing compatible charging stations to be shown.\n\nTested on BYD Android head units. It may also work on other systems with similar wide displays and top bars.</string>
+    <string name="abrp_display_title">DISPLAY &amp; LOCATION</string>
+    <string name="abrp_display_description">Optimises ABRP for wide in-car displays. The vehicle is positioned more naturally in the centre of the map, side panels are reduced in width, and various interface elements are resized or repositioned to prevent them from overflowing the usable screen area. Location handling is also reworked to use Android’s native location system instead of Google location services where Google Fused Location is unavailable or unreliable.</string>
+
+    <string name="abrp_auto_day_night_description">Changes only ABRP’s fresh-install Appearance default from Device settings to Automatic (Day/Night). It does not force the theme: if the user later selects another appearance, ABRP keeps that choice.</string>
+    <string name="abrp_direct_battery_description">Reads battery SOC locally from the BYD head unit and feeds it into ABRP’s existing live-telemetry path. No companion APK, telemetry token or battery-data upload is required. On BlueStacks/emulators this build injects a fixed 73% SOC; on the car it reads the BYD battery value locally.</string>
+    <string name="waze_remove_microphone_details">Waze voice search needs a compatible Android speech-recognition service, which is not available on this BYD system. Removes the unusable microphone button from the Waze search bar.</string>
+    <string name="abrp_native_tts_patch_description">Replaces ABRP\'s missing Android TTS engine with the BYD/Telenav Cerence Ark voice already installed in the car. Uses Zoe, the English female voice installed on this firmware. On a fresh ABRP install, BYD Cerence and Zoe are preselected automatically.</string>
 </resources>

@@ -2,11 +2,11 @@
 
 ## Spotify 9.1 scaling
 
-The supported presets are 100%, 120%, 140% and 160%. New 9.1 slot settings default to 120%.
+Spotify 9.1 uses a continuous 100-150% slider in 1% steps. New 9.1 slot settings default to 115%.
 
-Modern Spotify/Compose typography is scaled through the Android-backed Compose density creation path, while classic Android resource dimensions are scaled from the stock resource baseline. At 100%, those scale patches are not applied.
+For Spotify 9.1.82, classic Android resource dimensions are scaled from the stock resource baseline. Home/Library is increasingly Compose-based, so every selected value above 100% also scales the Android-backed Compose display density; this covers hard-coded Compose tile/card geometry and text. The patched Compose font scale is normalised to 1.0 so the selected interface factor is applied once through density rather than twice through density × fontScale. At 100%, those scale patches are not applied.
 
-The BYD wide-screen dimension map is applied separately. The playlist/content width uses the 960dp setting.
+The legacy 9.1.78 fixed-offset BYD dimension map is not reused on 9.1.82. The newer APKM profile keeps Spotify 9.1.82's stock container geometry and applies interface scaling through resources plus the Compose density hook described above.
 
 ## Queue shuffle icon
 

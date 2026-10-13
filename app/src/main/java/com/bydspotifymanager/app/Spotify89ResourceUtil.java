@@ -18,6 +18,16 @@ final class Spotify89ResourceUtil {
         final boolean modifiedIcon;
         BrandingResult(byte[] resources, boolean modifiedIcon) { this.resources=resources; this.modifiedIcon=modifiedIcon; }
     }
+    static final class UiPatchResult {
+        final byte[] resources;
+        final int visualChanges;
+        final int moderateChanges;
+        final int largeChanges;
+        UiPatchResult(byte[] resources, int visualChanges, int moderateChanges, int largeChanges) {
+            this.resources=resources; this.visualChanges=visualChanges;
+            this.moderateChanges=moderateChanges; this.largeChanges=largeChanges;
+        }
+    }
     private static final class ValuePos {
         int pos, dtype, dval, mapName; String key, type;
     }
@@ -35,18 +45,39 @@ final class Spotify89ResourceUtil {
     }
 
     static byte[] patchUi(byte[] resources, FontPreset preset) {
+        UiPatchResult r=patchUiPart(resources,preset);
+        if (r.visualChanges!=22) throw new IllegalArgumentException("Expected 22 Spotify 8.9 wide-screen visual values, found " + r.visualChanges);
+        if (preset==FontPreset.MODERATE || preset==FontPreset.LARGE) {
+            if (r.moderateChanges!=18) throw new IllegalArgumentException("Expected 18 Spotify 8.9 moderate font values, found " + r.moderateChanges);
+            if (preset==FontPreset.LARGE && r.largeChanges!=18) throw new IllegalArgumentException("Expected 18 Spotify 8.9 large font values, found " + r.largeChanges);
+        }
+        return r.resources;
+    }
+
+    /** Applies whichever 8.9 UI values are present in one APKM resource split. */
+    static UiPatchResult patchUiPart(byte[] resources, FontPreset preset) {
         byte[] out=resources.clone();
         int visual=applySimple(out, visualMap());
-        if (visual!=22) throw new IllegalArgumentException("Expected 22 Spotify 8.9 BYD visual values, found " + visual);
+        int moderate=0, large=0;
         if (preset==FontPreset.MODERATE || preset==FontPreset.LARGE) {
-            int n=applySimple(out, moderateSimple()) + applyStyles(out, moderateStyles());
-            if (n!=18) throw new IllegalArgumentException("Expected 18 Spotify 8.9 moderate font values, found " + n);
+            moderate=applySimple(out, moderateSimple()) + applyStyles(out, moderateStyles());
             if (preset==FontPreset.LARGE) {
-                int l=applySimple(out, largeSimple()) + applyStyles(out, largeStyles());
-                if (l!=18) throw new IllegalArgumentException("Expected 18 Spotify 8.9 large font values, found " + l);
+                large=applySimple(out, largeSimple()) + applyStyles(out, largeStyles());
             }
         }
-        return out;
+        return new UiPatchResult(out,visual,moderate,large);
+    }
+
+    /** Validation profile for the APKMirror APKM base.apk (some font dimensions live in density splits). */
+    static void validateApkmBaseProfile(byte[] resources) {
+        UiPatchResult r=patchUiPart(resources,FontPreset.MODERATE);
+        if (r.resources.length!=resources.length) throw new IllegalArgumentException("Unexpected 8.9 APKM resource profile size change");
+        if (r.visualChanges!=22) throw new IllegalArgumentException("Expected 22 Spotify 8.9 APKM visual values in base.apk, found " + r.visualChanges);
+        if (r.moderateChanges!=10) throw new IllegalArgumentException("Expected 10 Spotify 8.9 APKM base font values, found " + r.moderateChanges);
+        for (int[] spec:new int[][]{{APP_NAME_RID,0},{ADAPTIVE_FOREGROUND_RID,0}}) {
+            List<ValuePos> vals=findValues(resources,spec[0],false);
+            if (vals.isEmpty()) throw new IllegalArgumentException("Required 8.9 resource missing: 0x"+Integer.toHexString(spec[0]));
+        }
     }
 
     static void validateProfile(byte[] resources) {
@@ -167,7 +198,9 @@ final class Spotify89ResourceUtil {
         add(m,0x7f070526,0x00004001,0x00005001); add(m,0x7f070529,0x00003001,0x00003c01); add(m,0x7f07053b,0x00001801,0x00001e01);
         add(m,0x7f070811,0x00003801,0x00004601); add(m,0x7f070811,0x00002701,0x00003a01); add(m,0x7f070908,0x00004801,0x00005301);
         add(m,0x7f070a61,0x00003001,0x00003c01); add(m,0x7f070a64,0x00003001,0x00003c01);
-        add(m,0x7f07006d,0x00008601,0x00002c01); add(m,0x7f07006d,0x00009001,0x00002f01); add(m,0x7f07006d,0x0000b401,0x00003b01);
+        // Wide-screen content gutter: reduce the stock 134/144/180dp margins to 24dp.
+        // This lets the Home content use more of the display while retaining a clean edge gap.
+        add(m,0x7f07006d,0x00008601,0x00001801); add(m,0x7f07006d,0x00009001,0x00001801); add(m,0x7f07006d,0x0000b401,0x00001801);
         for (int rid:new int[]{0x7f0703bd,0x7f0703be,0x7f070484,0x7f070486}) { add(m,rid,0x00004001,0x00003001); add(m,rid,0x0000a001,0x00003501); }
         return m;
     }

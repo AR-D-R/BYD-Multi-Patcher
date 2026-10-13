@@ -1,8 +1,23 @@
-# Build BYD Spotify Manager v1.0
+# Building
 
-1. Extract the project and open the folder containing `settings.gradle` in Android Studio.
-2. Let Gradle sync finish.
-3. Build with **Build > Build App Bundle(s) / APK(s) > Build APK(s)**.
-4. Debug APK output is normally `app\build\outputs\apk\debug\app-debug.apk`.
+Open the top-level project folder in Android Studio. The project contains one Android application module: **app**.
 
-Update the existing Manager with `adb install -r` to preserve its local SpotifyPlus signing identity.
+Use the normal Android Studio **Build** action or:
+
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
+
+Output:
+
+```text
+app\build\outputs\apk\debug\app-debug.apk
+```
+
+The build automatically generates the standalone DEX assets used by Spotify AutoResume, the Spotify LHS hook and ABRP Direct BYD telemetry. There is no nested companion application to build.
+
+Root helper task:
+
+```powershell
+.\gradlew.bat buildPatcher
+```

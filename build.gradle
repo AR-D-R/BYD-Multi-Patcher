@@ -1,3 +1,18 @@
 plugins {
     id 'com.android.application' version '8.13.2' apply false
 }
+
+// Keep the Android Studio project focused on the single patcher app module.
+defaultTasks ':app:assembleDebug'
+
+tasks.register('buildPatcher') {
+    group = 'build'
+    description = 'Build BYD Multi Patcher debug APK, including generated runtime hook DEX assets.'
+    dependsOn ':app:assembleDebug'
+}
+
+tasks.register('buildPatcherRelease') {
+    group = 'build'
+    description = 'Build BYD Multi Patcher release APK, including generated runtime hook DEX assets.'
+    dependsOn ':app:assembleRelease'
+}

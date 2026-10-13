@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.zip.*;
 
+/** Legacy Spotify 9.1.78 standalone-APK engine retained for reference.
+ *  The active Spotify 9.1.82 APKM path is ApkPatchEngine91. */
 final class ApkPatchEngine {
     interface Progress { void onProgress(String message); }
 
@@ -191,7 +193,7 @@ final class ApkPatchEngine {
                 progress.onProgress("LHS runtime mirror helper injected as " + PlayerPositionUtil.HOOK_DEX_ENTRY + ".");
             }
         }
-        String layoutText = bydLayout ? "BYD wide-screen layout fixes" : "stock Spotify layout";
+        String layoutText = bydLayout ? "wide-screen layout fixes" : "stock Spotify layout";
         progress.onProgress(layoutText + " + " + Math.round(scaleFactor * 100f)
                 + "% interface scale applied from the full stock baseline.");
         if (iconHue != 0 || iconBadge) progress.onProgress("Launcher icon: hue " + IconBrandingUtil.normaliseHue(iconHue) + "°" + (iconBadge ? " + badge" : "") + ".");

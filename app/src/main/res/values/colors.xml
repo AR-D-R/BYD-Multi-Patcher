@@ -7,4 +7,8 @@
     <color name="text_secondary">#B3B3B3</color>
     <color name="divider">#303030</color>
     <color name="progress_surface">#14241A</color>
+    <!-- ABRP logo-inspired accents used only inside the ABRP profile panel. -->
+    <color name="abrp_red">#C52222</color>
+    <color name="abrp_blue">#3B82C4</color>
+    <color name="abrp_green">#67A63B</color>
 </resources>

@@ -10,6 +10,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipEntry;
 
 final class IconBrandingUtil {
     static final String ADAPTIVE_FOREGROUND_XML = "res/drawable/ic_launcher_renaissance_foreground.xml";
@@ -114,6 +116,36 @@ final class IconBrandingUtil {
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+
+    /** Loads the best available stock launcher icon from base.apk inside an APKM bundle. */
+    static Bitmap loadStockPreviewFromApkm(File apkm) {
+        if (apkm == null || !apkm.isFile()) return null;
+        try (ZipFile outer = new ZipFile(apkm)) {
+            ZipEntry base = outer.getEntry("base.apk");
+            if (base == null) return null;
+            Bitmap best = null;
+            int bestRank = -1;
+            try (ZipInputStream zin = new ZipInputStream(outer.getInputStream(base))) {
+                ZipEntry e;
+                while ((e = zin.getNextEntry()) != null) {
+                    String name = e.getName();
+                    int rank = -1;
+                    for (int i = 0; i < DENSITY_ICONS.length; i++) if (DENSITY_ICONS[i].equals(name)) { rank = i; break; }
+                    if (rank <= bestRank) continue;
+                    byte[] bytes = IoUtil.readAll(zin);
+                    Bitmap candidate = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    if (candidate != null) {
+                        if (best != null && !best.isRecycled()) best.recycle();
+                        best = candidate; bestRank = rank;
+                    }
+                }
+            }
+            return best;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     static Bitmap renderPreview(Bitmap stock, int hueDegrees, boolean plusBadge) {

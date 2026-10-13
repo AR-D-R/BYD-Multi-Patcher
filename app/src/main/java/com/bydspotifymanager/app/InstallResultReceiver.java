@@ -26,7 +26,9 @@ public class InstallResultReceiver extends BroadcastReceiver {
                 .putString("last_install_package", targetPackage == null ? "" : targetPackage)
                 .apply();
         if (status == PackageInstaller.STATUS_SUCCESS) {
-            Toast.makeText(context, "SpotifyPlus installed successfully.", Toast.LENGTH_LONG).show();
+            String app = BuildConfigData.ABRP_PACKAGE.equals(targetPackage) ? "ABRP"
+                    : (BuildConfigData.WAZE_PACKAGE.equals(targetPackage) ? "Waze" : "SpotifyPlus");
+            Toast.makeText(context, app + " installed successfully.", Toast.LENGTH_LONG).show();
         } else {
             Toast.makeText(context, "Install failed: " + status + (msg == null ? "" : " · " + msg), Toast.LENGTH_LONG).show();
         }

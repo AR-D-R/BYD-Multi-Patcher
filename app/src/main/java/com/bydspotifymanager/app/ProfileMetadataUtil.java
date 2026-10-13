@@ -55,6 +55,32 @@ final class ProfileMetadataUtil {
         }
     }
 
+    /**
+     * Builds DexMetadata from the patched APK's own embedded profile. This keeps the profile
+     * version-specific when Spotify itself changes DEX layout between releases.
+     */
+    static void createMatchingDmFromEmbeddedProfile(File apk, File outDm) throws Exception {
+        byte[] prof;
+        byte[] profm = null;
+        try (ZipFile z = new ZipFile(apk)) {
+            ZipEntry p = z.getEntry("assets/dexopt/baseline.prof");
+            if (p == null) throw new IOException("Patched APK has no embedded baseline.prof");
+            prof = IoUtil.readAll(z.getInputStream(p));
+            ZipEntry pm = z.getEntry("assets/dexopt/baseline.profm");
+            if (pm != null) profm = IoUtil.readAll(z.getInputStream(pm));
+        }
+        try (ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outDm)))) {
+            ZipEntry p = new ZipEntry("primary.prof");
+            p.setMethod(ZipEntry.DEFLATED);
+            zout.putNextEntry(p); zout.write(prof); zout.closeEntry();
+            if (profm != null) {
+                ZipEntry pm = new ZipEntry("primary.profm");
+                pm.setMethod(ZipEntry.DEFLATED);
+                zout.putNextEntry(pm); zout.write(profm); zout.closeEntry();
+            }
+        }
+    }
+
     /** Build a DexMetadata .dm whose primary.prof matches the final APK's DEX CRC32 values. */
     static void createMatchingDm(Context context, File apk, File outDm) throws Exception {
         Map<String, Long> dexCrcs = readDexCrcs(apk);

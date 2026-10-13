@@ -7,12 +7,14 @@
         <package android:name="com.spotify.music" />
         <package android:name="com.spotify.musia" />
         <package android:name="com.spotify.musib" />
+        <package android:name="com.waze" />
+        <package android:name="com.iternio.abrpapp" />
     </queries>
 
     <application
         android:allowBackup="false"
         android:icon="@drawable/ic_manager"
-        android:label="BYD Spotify Manager"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.BYDSpotifyManager">
 
@@ -28,5 +30,7 @@
         <receiver
             android:name=".InstallResultReceiver"
             android:exported="false" />
+
+
     </application>
 </manifest>
