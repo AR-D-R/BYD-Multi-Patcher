@@ -90,18 +90,70 @@ Main changes include:
 
 ![ABRP 2 on BYD](docs/images/abrp-navigation.png)
 
-## Building
+## Installation
 
-Open the top-level project folder in Android Studio and build the `app` module normally.
+1. Download the latest **BYD Multi Patcher APK** from the [Releases](../../releases) section and install it on your unlocked BYD infotainment system.
 
-## Installing patched apps
+2. Make sure you have a non-stock browser installed.
 
-Patched apps are locally re-signed. The first patched installation normally requires uninstalling the official version of that app because Android will not allow an APK signed with a different certificate to replace it.
+   The stock BYD browser may block Spotify, Waze and ABRP APK/APKM downloads.
 
-Later versions patched by the same BYD Multi Patcher installation can normally update the existing patched app because the same local signing identity is reused.
+   I recommend **Firefox** — it has worked reliably for me.
 
-## Notes
+3. Open **BYD Multi Patcher**.
 
-The patches are tied to specific tested app versions. Using an unsupported version may fail to patch, fail to launch or behave incorrectly.
+   At the top you will see the available profiles:
 
-The existing patcher package ID and signing-key alias are intentionally retained from the original BYD Spotify Patcher for update compatibility.
+   - Spotify 9.1
+   - Spotify 8.9
+   - Waze
+   - ABRP
+
+4. Select the profile you want to patch.
+
+   Each profile has a button linking to APKMirror for the exact supported app version.
+
+   Supported versions:
+
+   - **Spotify 9.1.82.2161**  
+     https://www.apkmirror.com/apk/spotify-ab/spotify-music-podcasts/spotify-music-and-podcasts-9-1-82-2161-release/spotify-music-and-podcasts-9-1-82-2161-android-apk-download/
+
+   - **Spotify 8.9.76.538**  
+     https://www.apkmirror.com/apk/spotify-ab/spotify-music-podcasts/spotify-music-and-podcasts-8-9-76-538-release/spotify-music-and-podcasts-8-9-76-538-android-apk-download/
+
+   - **Waze 5.24.0.1**  
+     https://www.apkmirror.com/apk/waze/waze-gps-maps-traffic-alerts-live-navigation/waze-navigation-live-traffic-5-24-0-1-release/waze-navigation-live-traffic-5-24-0-1-2-android-apk-download/
+
+   - **ABRP 7.1.7**  
+     https://www.apkmirror.com/apk/rivian-llc-2/a-better-routeplanner-abrp/a-better-routeplanner-abrp-7-1-7-release/a-better-routeplanner-abrp-7-1-7-android-apk-download/
+
+5. Download the required APK/APKM.
+
+   You can either:
+
+   - download it directly on the BYD system using Firefox, or
+   - download it on another device or PC, copy it to a USB drive and connect the USB drive to the car.
+
+6. Return to **BYD Multi Patcher** and press **Open APKM**.
+
+   Select the file you downloaded. The patcher will verify that the app and version are supported.
+
+7. Once verification passes, press **Install selected APK**.
+
+   The patcher will first create the patched version of the app.
+
+8. The first time you do this, Android will ask you to allow BYD Multi Patcher to install unknown apps.
+
+   Enable **Allow from this source**, then return to BYD Multi Patcher.
+
+9. Press **Install selected APK** again.
+
+   The app will be patched and the standard Android installation window will appear.
+
+10. Press **Install**.
+
+    BYD may show the usual warning about installing third-party applications. Continue with the installation.
+
+Once installation is complete, the patched Spotify, Waze or ABRP app is ready to use.
+
+> **Important:** Use the exact app versions listed above. The patcher checks the source APK/APKM and will reject unsupported versions.
