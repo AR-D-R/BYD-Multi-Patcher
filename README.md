@@ -127,7 +127,7 @@ Main changes include:
    - **ABRP 7.1.7**  
      https://www.apkmirror.com/apk/rivian-llc-2/a-better-routeplanner-abrp/a-better-routeplanner-abrp-7-1-7-release/a-better-routeplanner-abrp-7-1-7-android-apk-download/
 
-5. Download the required APK/APKM.
+5. Download the required APKM.
 
    You can either:
 
