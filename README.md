@@ -94,13 +94,17 @@ Main changes include:
 
 1. Download the latest **BYD Multi Patcher APK** from the [Releases](../../releases) section and install it on your unlocked BYD infotainment system.
 
-2. Make sure you have a non-stock browser installed.
+2. Make sure you have a non-stock browser and a file manager installed
 
-   The stock BYD browser may block Spotify, Waze and ABRP APK/APKM downloads.
+   The stock BYD browser will block APK/APKM downloads.
 
-   I recommend **Firefox** — it has worked reliably for me.
-
-3. Open **BYD Multi Patcher**.
+   I recommend **Firefox**
+   https://www.apkmirror.com/apk/mozilla/firefox/firefox-fast-private-browser-158-0-release/firefox-fast-private-browser-158-0-3-android-apk-download/
+   
+   And **Cx File Explorer**
+   https://www.apkmirror.com/apk/cx-file-explorer/cx-file-explorer/cx-file-explorer-2-8-1-release/cx-file-explorer-2-8-1-3-android-apk-download/
+   
+4. Open **BYD Multi Patcher**.
 
    At the top you will see the available profiles:
 
@@ -109,7 +113,7 @@ Main changes include:
    - Waze
    - ABRP
 
-4. Select the profile you want to patch.
+5. Select the profile you want to patch.
 
    Each profile has a button linking to APKMirror for the exact supported app version.
 
@@ -127,30 +131,30 @@ Main changes include:
    - **ABRP 7.1.7**  
      https://www.apkmirror.com/apk/rivian-llc-2/a-better-routeplanner-abrp/a-better-routeplanner-abrp-7-1-7-release/a-better-routeplanner-abrp-7-1-7-android-apk-download/
 
-5. Download the required APKM.
+6. Download the required APKM.
 
    You can either:
 
    - download it directly on the BYD system using Firefox, or
    - download it on another device or PC, copy it to a USB drive and connect the USB drive to the car.
 
-6. Return to **BYD Multi Patcher** and press **Open APKM**.
+7. Return to **BYD Multi Patcher** and press **Open APKM**.
 
    Select the file you downloaded. The patcher will verify that the app and version are supported.
 
-7. Once verification passes, press **Install selected APK**.
+8. Once verification passes, press **Install selected APK**.
 
    The patcher will first create the patched version of the app.
 
-8. The first time you do this, Android will ask you to allow BYD Multi Patcher to install unknown apps.
+9. The first time you do this, Android will ask you to allow BYD Multi Patcher to install unknown apps.
 
    Enable **Allow from this source**, then return to BYD Multi Patcher.
 
-9. Press **Install selected APK** again.
+10. Press **Install selected APK** again.
 
    The app will be patched and the standard Android installation window will appear.
 
-10. Press **Install**.
+11. Press **Install**.
 
     BYD may show the usual warning about installing third-party applications. Continue with the installation.
 
