@@ -6,8 +6,7 @@ The project started as BYD Spotify Patcher. Version 2 expands it into one patche
 
 ## What changed in v2
 
-- Added **Waze** patching for the BYD wide-screen layout.
-- Added **ABRP** with direct BYD battery SOC and native BYD navigation TTS.
+- Added **ABRP**, **Waze** patching.
 - Updated **Spotify 9.1** version.
 - Project now uses APKM files instead of APK. APKMs are smaller and easier to find.
 - Renamed the project from **BYD Spotify Patcher** to **BYD Multi Patcher**.
@@ -83,6 +82,7 @@ Main changes include:
 - Reads the BYD traction-battery SOC directly from the car — no separate link app or OBD adapter required.
 - Uses the native BYD/Telenav **Cerence** TTS engine for navigation instructions.
 - Uses the built-in English **Zoe** voice and selects it automatically on a fresh install.
+- Removes the reliance on Google location services and switches to using native Android location instead. This change resolves the location lag issue that the original application experienced when installed on BYD systems.
 - Defaults Appearance to **Automatic (Day/Night)** on a fresh install.
 - Keeps live BYD battery data available to ABRP while driving.
 
