@@ -125,6 +125,17 @@ public class MainActivity extends AppCompatActivity {
                 if (uri != null) importSource(uri);
             });
 
+    private final ActivityResultLauncher<Intent> pickBuiltIn = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == FileBrowserActivity.RESULT_USE_EXTERNAL) {
+                    openExternalPicker();
+                    return;
+                }
+                if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) return;
+                String path = result.getData().getStringExtra(FileBrowserActivity.EXTRA_RESULT_PATH);
+                if (path != null) importSource(Uri.fromFile(new File(path)));
+            });
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
@@ -220,14 +231,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupActions() {
-        btnBrowse.setOnClickListener(v -> {
-            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            boolean bundleProfile = true;
-            i.setType(bundleProfile ? "*/*" : "application/vnd.android.package-archive");
-            if (bundleProfile) i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/zip", "application/octet-stream", "application/vnd.android.package-archive"});
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            pickApk.launch(i);
-        });
+        btnBrowse.setOnClickListener(v -> BrowseChoiceDialog.show(this, currentAccent(),
+                "Looking for " + currentSourceDescription(),
+                prefs.getString("browse_method", ""), this::openBuiltInBrowser, this::openExternalPicker));
         findViewById(R.id.btnApkMirror).setOnClickListener(v ->
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(currentApkMirrorUrl()))));
         findViewById(R.id.btnRefresh).setOnClickListener(v -> {
@@ -449,6 +455,50 @@ public class MainActivity extends AppCompatActivity {
                 button.setBackgroundTintList(buttonTint);
                 button.setTextColor(engineAbrp ? Color.WHITE : Color.BLACK);
             }
+        }
+    }
+
+    private int currentAccent() {
+        return engineAbrp ? ABRP_ACCENT : (engineWaze ? WAZE_ACCENT : SPOTIFY_ACCENT);
+    }
+
+    private String currentProductName() {
+        return engineAbrp ? "ABRP" : (engineWaze ? "Waze" : (engine89 ? "Spotify 8.9" : "Spotify 9.1"));
+    }
+
+    private String currentSourceDescription() {
+        if (engineWaze) return "Waze " + WAZE_STABLE_VERSION + " or " + WAZE_BETA_VERSION + " · .apkm";
+        return currentProductName().replaceAll(" \\d+\\.\\d+$", "") + " " + currentTargetVersion() + " · .apkm";
+    }
+
+    private void openBuiltInBrowser() {
+        prefs.edit().putString("browse_method", BrowseChoiceDialog.METHOD_BUILT_IN).apply();
+        String[] versions = engineWaze ? new String[]{WAZE_STABLE_VERSION, WAZE_BETA_VERSION} : new String[]{currentTargetVersion()};
+        String[] keywords = engineAbrp ? new String[]{"abrp", "iternio", "routeplanner"}
+                : (engineWaze ? new String[]{"waze"} : new String[]{"spotify"});
+        Intent i = new Intent(this, FileBrowserActivity.class)
+                .putExtra(FileBrowserActivity.EXTRA_TITLE, "SELECT " + currentProductName().toUpperCase(Locale.ROOT) + " FILE")
+                .putExtra(FileBrowserActivity.EXTRA_SUBTITLE, "Looking for " + currentSourceDescription())
+                .putExtra(FileBrowserActivity.EXTRA_ACCENT, currentAccent())
+                .putExtra(FileBrowserActivity.EXTRA_ON_ACCENT, engineAbrp ? Color.WHITE : Color.BLACK)
+                .putExtra(FileBrowserActivity.EXTRA_MATCH_VERSIONS, versions)
+                .putExtra(FileBrowserActivity.EXTRA_MATCH_KEYWORDS, keywords);
+        pickBuiltIn.launch(i);
+    }
+
+    private void openExternalPicker() {
+        prefs.edit().putString("browse_method", BrowseChoiceDialog.METHOD_EXTERNAL).apply();
+        // On BYD head units ACTION_OPEN_DOCUMENT only resolves to the stock Albums gallery.
+        // Third-party file managers register for ACTION_GET_CONTENT instead.
+        // No MIME filter: .apkm has no registered type and file managers would hide it; the
+        // selected file is validated by importSource anyway.
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.setType("*/*");
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            pickApk.launch(Intent.createChooser(i, "Choose the original " + currentProductName() + " file"));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No file manager found. Use the built-in browser instead.", Toast.LENGTH_LONG).show();
         }
     }
 
