@@ -4,6 +4,18 @@ BYD Multi Patcher modifies supported Spotify, Waze and A Better Routeplanner bui
 
 The project started as BYD Spotify Patcher. Version 2 expands it into one patcher for Spotify, Waze and ABRP.
 
+## What changed in v2.1
+
+- Added **BYD instrument-cluster track display** for Spotify 8.9 and 9.1. The feature is enabled by default and can be turned off if required.
+- Added a separate **Patch & Save APKM** option for supported apps. Patched APKMs are timestamped and saved to:
+**Downloads/BYD-Multi-Patcher/** They can then be copied to another vehicle or reinstalled using an APKM-capable file manager such as CX File Explorer.
+- Added a separate **Waze 5.9** profile. This older version may work better on slower BYD hardware.
+- Fixed **ABRP BYD Cerence TTS language support**. Cerence TTS is no longer limited to English and can now use the selected supported navigation language.
+- Added a **built-in APK/APKM file browser**, particularly for older DiLink systems such as DiLink 3 where the Android system file picker may not work correctly. The option to use an external file manager such as CX File Explorer is still available.
+Thanks to **lexwah** for contributing.
+- Added an optional **Debug Mode** for Waze 5.24, Waze 5.9 and ABRP. It is disabled by default. If an app is not working correctly, enable Debug Mode before patching and install the debug version. The app will collect diagnostic information for approximately 5 minutes and save the log to:
+**Downloads/BYD-Multi-Patcher/** The log can then be shared with me to help investigate the problem. Debug logging is designed to exclude location and other personal data. 
+
 ## What changed in v2
 
 - Added **ABRP**, **Waze** patching.

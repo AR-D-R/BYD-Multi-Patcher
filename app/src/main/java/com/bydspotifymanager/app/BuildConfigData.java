@@ -1,7 +1,7 @@
 package com.bydspotifymanager.app;
 
 final class BuildConfigData {
-    static final String MANAGER_VERSION = "2.0";
+    static final String MANAGER_VERSION = "2.1";
 
     // Spotify 9.1.
     static final String SUPPORTED_VERSION = "9.1.82.2161";
@@ -27,6 +27,12 @@ final class BuildConfigData {
     // Exact reference hash: matching it marks the source TESTED; other valid Waze bundles use compatibility mode.
     static final String WAZE_BASE_SHA256 = "cc49acf7a9eb00d9a990e12c6d269c30dffd2780182481c8506fe5c46ebc6860";
     static final String WAZE_APKMIRROR_URL = "https://www.apkmirror.com/apk/waze/waze-gps-maps-traffic-alerts-live-navigation/waze-navigation-live-traffic-5-24-0-1-release/waze-navigation-live-traffic-5-24-0-1-2-android-apk-download/";
+
+    // Waze 5.9.5.4 legacy profile for slower BYD hardware.
+    static final String WAZE59_SUPPORTED_VERSION = "5.9.5.4";
+    static final long WAZE59_SUPPORTED_VERSION_CODE = 1030629L;
+    static final String WAZE59_BASE_SHA256 = "98ba20d667948424f18b3dbefd78ee17160e97a1353812d0477dc95c0b4c4f51";
+    static final String WAZE59_APKMIRROR_URL = "https://www.apkmirror.com/apk/waze/waze-gps-maps-traffic-alerts-live-navigation/waze-navigation-live-traffic-5-9-5-4-release/waze-navigation-live-traffic-5-9-5-4-android-apk-download/";
 
     // A Better Routeplanner 7.1.7 APKMirror universal 120-640dpi bundle.
     static final String ABRP_SUPPORTED_VERSION = "7.1.7";

@@ -72,3 +72,12 @@ The supplied launch log directly confirmed this failure mode. The corrected
 production patch again matched 20/20 regions with force fallback disabled, and
 the straight-line regression test now asserts both the +16dp menu offset and
 `v3 == 3` after the replacement block.
+## v2.1 report submenu bottom-bar clearance
+
+The first v2.1 attempt changed the 8dp `Spacer` after `SubmenuButtons` to 64dp. A real BYD head-unit test showed the button remained under the navigation bar, proving that the spacer is not what controls the placed/clickable row on this layout.
+
+The revised patch targets `SubmenuButtons (ReportsMenuLayout.kt:605)` itself. In stock 5.24.0.1 the action Row uses `fillMaxWidth() -> wrapContentHeight() -> padding(16dp)`. The patch keeps the stock 8dp button spacing, reuses that already-loaded 8dp value as a small Row padding, removes the redundant `wrapContentHeight()`, and replaces the old 16dp padding call with `offset(x = 0dp, y = -56dp)`. `Modifier.offset` changes the Row placement and hit target, so the confirmation/action button is physically moved above the BYD system overlay.
+
+A second real-layout test exposed a separate stock behaviour in sparse one-row submenus such as Animal, Traffic and Crash. `ItemsGrid (ReportsMenuLayout.kt:571)` receives a boolean that selects `wrapContentHeight()` for those menus, while fuller report menus use a `ColumnScope.weight(1f)` grid. Raising only `SubmenuButtons` therefore caused the action row to overlap the labels in the sparse menus. The patch now forces the sparse branch through the weighted-grid path as well (`if-eqz v7` -> unconditional `goto/16` to the existing weighted branch). This does not change the item content or ordering; it only makes all report submenus reserve the same vertical region for their choices and leaves the raised action row at the bottom.
+
+The patch is located from the Kotlin trace rather than a raw file offset and verifies the full 54-byte stock modifier sequence before writing. On the supplied Waze 5.24.0.1 bundle the sequence starts at `classes7.dex` `0x4AE72E`; the Row offset call occupies the old padding-call slot at `0x4AE75C`. The existing fixed-region compatibility counts remain unchanged because this is a separate dynamic patch. A head-unit visual test is still required for the revised direct-row implementation.

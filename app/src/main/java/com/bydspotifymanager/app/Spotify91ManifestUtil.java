@@ -122,8 +122,22 @@ final class Spotify91ManifestUtil {
         return out;
     }
 
+    static final String[] BYD_CLUSTER_PERMISSIONS = {
+            "android.permission.BYDAUTO_INSTRUMENT_COMMON",
+            "android.permission.BYDAUTO_INSTRUMENT_GET",
+            "android.permission.BYDAUTO_INSTRUMENT_SET"
+    };
+
     static byte[] patchAutoResume(byte[] data, String newPackage) {
-        String resumeService = newPackage + ".AutoResumeService";
+        return patchPlaybackService(data, newPackage + ".AutoResumeService", false);
+    }
+
+    static byte[] patchDirectCluster(byte[] data, String newPackage) {
+        byte[] out = patchPlaybackService(data, newPackage + ".AutoResumeService", true);
+        return ManifestElementUtil.addRootStringElements(out, "uses-permission", BYD_CLUSTER_PERMISSIONS);
+    }
+
+    private static byte[] patchPlaybackService(byte[] data, String resumeService, boolean clusterBridge) {
         Map<String,String> replacements = new LinkedHashMap<>();
         replacements.put("android.media.MediaRoute2ProviderService", "byd.intent.action.RESTORE_PLAYBACK");
         replacements.put(MEDIA_ROUTE_SERVICE_SLOT, resumeService);
@@ -157,11 +171,31 @@ final class Spotify91ManifestUtil {
                 }
                 if ("service".equals(tag) && attrs.stream().anyMatch(a -> "name".equals(a.name) && resumeService.equals(a.value))) {
                     found = true;
-                    for (Attr a : attrs) {
+                    int permissionIndex = -1;
+                    for (int i = 0; i < attrs.size(); i++) {
+                        Attr a = attrs.get(i);
                         if ("enabled".equals(a.name)) {
                             if (a.dtype != 0x12 || a.dval != 0) throw new IllegalArgumentException("Unexpected restore service enabled state");
                             Spotify89BinaryUtil.put32(c, a.off + 16, 0xffffffff);
+                        } else if ("exported".equals(a.name)) {
+                            if (a.dtype != 0x12) throw new IllegalArgumentException("Unexpected restore service exported type");
+                            Spotify89BinaryUtil.put32(c, a.off + 16, 0xffffffff);
+                        } else if (clusterBridge && "permission".equals(a.name)) {
+                            permissionIndex = i;
                         }
+                    }
+                    // The reused MediaRoute2 provider slot can be protected by a system-only bind
+                    // permission. Direct cluster mode repurposes it as our explicit foreground relay,
+                    // so remove that unrelated provider bind permission.
+                    if (permissionIndex >= 0) {
+                        int removePos = ap + permissionIndex * attrSize;
+                        byte[] nc = new byte[c.length - attrSize];
+                        System.arraycopy(c, 0, nc, 0, removePos);
+                        System.arraycopy(c, removePos + attrSize, nc, removePos, c.length - removePos - attrSize);
+                        c = nc;
+                        Spotify89BinaryUtil.put32(c, 4, sz - attrSize);
+                        attrCount--;
+                        attrs.remove(permissionIndex);
                     }
                     int fgIdx = ss.indexOf("foregroundServiceType"), androidNs = ss.indexOf("http://schemas.android.com/apk/res/android");
                     if (fgIdx < 0 || androidNs < 0) throw new IllegalArgumentException("Manifest foregroundServiceType metadata missing");
@@ -184,7 +218,7 @@ final class Spotify91ManifestUtil {
                     System.arraycopy(attr, 0, nc, insertPos, attr.length);
                     System.arraycopy(c, insertPos, nc, insertPos + attrSize, c.length - insertPos);
                     c = nc;
-                    Spotify89BinaryUtil.put32(c, 4, sz + attrSize);
+                    Spotify89BinaryUtil.put32(c, 4, c.length);
                     Spotify89BinaryUtil.put16(c, 28, attrCount + 1);
                 }
             }

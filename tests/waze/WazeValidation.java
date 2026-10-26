@@ -18,11 +18,46 @@ public class WazeValidation {
         Object profile = f.get(null);
         Method m = WazePatchEngine.class.getDeclaredMethod("patchBaseApk", File.class, File.class, profile.getClass(), boolean.class, boolean.class, boolean.class, WazePatchEngine.Progress.class);
         m.setAccessible(true);
-        m.invoke(null, base.toFile(), Path.of(args[1], "base.patched.apk").toFile(), profile, false, true, true, (WazePatchEngine.Progress)System.out::println);
+        File patched = Path.of(args[1], "base.patched.apk").toFile();
+        File patchedNoEv = Path.of(args[1], "base.patched.noev.apk").toFile();
+        File patchedMicKept = Path.of(args[1], "base.patched.mic-kept.apk").toFile();
+
+        m.invoke(null, base.toFile(), patched, profile, false, true, true, (WazePatchEngine.Progress)System.out::println);
+        assertReportBottomClearance(patched);
         System.out.println("Production patchBaseApk completed with EV + CCS2 and microphone removal enabled; force fallback disabled.");
-        m.invoke(null, base.toFile(), Path.of(args[1], "base.patched.noev.apk").toFile(), profile, false, false, true, (WazePatchEngine.Progress)System.out::println);
+        m.invoke(null, base.toFile(), patchedNoEv, profile, false, false, true, (WazePatchEngine.Progress)System.out::println);
+        assertReportBottomClearance(patchedNoEv);
         System.out.println("Production patchBaseApk completed with EV disabled and microphone removal enabled; force fallback disabled.");
-        m.invoke(null, base.toFile(), Path.of(args[1], "base.patched.mic-kept.apk").toFile(), profile, false, true, false, (WazePatchEngine.Progress)System.out::println);
+        m.invoke(null, base.toFile(), patchedMicKept, profile, false, true, false, (WazePatchEngine.Progress)System.out::println);
+        assertReportBottomClearance(patchedMicKept);
         System.out.println("Production patchBaseApk completed with microphone removal disabled; force fallback disabled.");
     }
+
+    private static void assertReportBottomClearance(File apk) throws Exception {
+        try (ZipFile z = new ZipFile(apk); var in = z.getInputStream(z.getEntry("classes7.dex"))) {
+            byte[] dex = in.readAllBytes();
+
+            // SubmenuButtons: the old 16dp padding slot is repurposed as y=-56dp offset.
+            int buttons = 0x4ae72e;
+            int yOffset = buttons + 42;
+            if (dex.length <= yOffset + 3
+                    || (dex[yOffset] & 0xff) != 0x15
+                    || (dex[yOffset + 1] & 0xff) != 0x0a
+                    || (dex[yOffset + 2] & 0xff) != 0x60
+                    || (dex[yOffset + 3] & 0xff) != 0xc2) {
+                throw new AssertionError("Waze report action row was not moved upward by 56dp");
+            }
+
+            // ItemsGrid: sparse one-row menus must use the same weighted-height path as full menus.
+            int sparseBranch = 0x4aebe2;
+            if (dex.length <= sparseBranch + 3
+                    || (dex[sparseBranch] & 0xff) != 0x29
+                    || (dex[sparseBranch + 1] & 0xff) != 0x00
+                    || (dex[sparseBranch + 2] & 0xff) != 0x10
+                    || (dex[sparseBranch + 3] & 0xff) != 0x00) {
+                throw new AssertionError("Waze sparse report grid was not bottom-anchored");
+            }
+        }
+    }
+
 }

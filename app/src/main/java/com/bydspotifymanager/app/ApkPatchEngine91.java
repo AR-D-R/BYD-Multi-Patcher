@@ -15,6 +15,7 @@ final class ApkPatchEngine91 {
     private static final int EXPECTED_APKM_APK_COUNT = 39;
     private static final int EXPECTED_BASE_DEX_COUNT = 14;
     private static final String AUTO_RESUME_ASSET = "auto_resume/classes.dex";
+    private static final String CLUSTER_BRIDGE_ASSET = "cluster_bridge/classes.dex";
     private static final String AUTO_RESUME_DEX = "classes15.dex";
     private static final String LHS_DEX = "classes16.dex";
     private static final String MEDIA_AUTHORITY_OLD = "com.spotify.mobile.android.mediaapi";
@@ -113,7 +114,7 @@ final class ApkPatchEngine91 {
     static List<File> buildSignedBundle(Context context, File sourceApkm, File outputDir,
                                         boolean secondary, String appName, float scaleFactor,
                                         boolean bydLayout, boolean playerLeft, boolean autoResume,
-                                        int iconHue, boolean iconBadge, Progress progress) throws Exception {
+                                        boolean clusterBridge, int iconHue, boolean iconBadge, Progress progress) throws Exception {
         Validation validation = validateSource(sourceApkm);
         if (!validation.ok) throw new IllegalArgumentException(validation.detail);
         String targetPackage = secondary ? BuildConfigData.SECONDARY_PACKAGE : BuildConfigData.PRIMARY_PACKAGE;
@@ -155,9 +156,9 @@ final class ApkPatchEngine91 {
                 if ("base.apk".equals(name)) {
                     progress.onProgress("Patching Spotify 9.1.82 base.apk…");
                     patchBase(context, raw, patched, targetPackage, clean, scaleFactor, bydLayout, playerLeft, autoResume,
-                            iconHue, iconBadge, progress);
+                            clusterBridge, iconHue, iconBadge, progress);
                 } else {
-                    patchSplit(raw, patched, targetPackage, scaleFactor);
+                    patchSplit(raw, patched, targetPackage, scaleFactor, clusterBridge);
                 }
                 progress.onProgress("Signing Spotify 9.1 APK " + index + "/" + names.size() + " · " + name);
                 File signedApk = new File(outputDir, name);
@@ -178,7 +179,7 @@ final class ApkPatchEngine91 {
 
     private static void patchBase(Context context, File source, File output, String targetPackage,
                                   String appName, float scaleFactor, boolean bydLayout, boolean playerLeft,
-                                  boolean autoResume, int iconHue, boolean iconBadge, Progress progress) throws Exception {
+                                  boolean autoResume, boolean clusterBridge, int iconHue, boolean iconBadge, Progress progress) throws Exception {
         Validation validation = validateBaseApk(source, EXPECTED_APKM_APK_COUNT);
         if (!validation.ok) throw new IllegalArgumentException(validation.detail);
         boolean modifyIcon = iconBadge || IconBrandingUtil.normaliseHue(iconHue) != 0;
@@ -186,8 +187,11 @@ final class ApkPatchEngine91 {
         try (ZipFile zin = new ZipFile(source)) {
             byte[] manifest = IoUtil.readAll(zin.getInputStream(zin.getEntry("AndroidManifest.xml")));
             manifest = Spotify91ManifestUtil.patchIdentity(manifest, targetPackage);
-            manifest = Spotify91ManifestUtil.patchAutoResume(manifest, targetPackage);
-            if (!autoResume) manifest = Spotify91ManifestUtil.disableAutoResumeTrigger(manifest);
+            manifest = clusterBridge ? Spotify91ManifestUtil.patchDirectCluster(manifest, targetPackage)
+                    : Spotify91ManifestUtil.patchAutoResume(manifest, targetPackage);
+            // Direct-cluster mode keeps the RESTORE_PLAYBACK trigger so the relay can start after a
+            // vehicle restart even when playback Auto Resume itself is disabled in the helper DEX.
+            if (!autoResume && !clusterBridge) manifest = Spotify91ManifestUtil.disableAutoResumeTrigger(manifest);
 
             byte[] resources = IoUtil.readAll(zin.getInputStream(zin.getEntry("resources.arsc")));
             resources = patchResourceIdentity(resources, targetPackage);
@@ -207,9 +211,24 @@ final class ApkPatchEngine91 {
                 adaptiveForegroundPng = IconBrandingUtil.buildAdaptiveForegroundPng(xxx, iconHue, iconBadge);
             }
 
-            byte[] autoDex = retargetHelperDex(IoUtil.readAll(context.getAssets().open(AUTO_RESUME_ASSET)), targetPackage);
-            if (autoDex.length < 512 || !contains(autoDex, "AIVI-AutoResume".getBytes(StandardCharsets.US_ASCII)))
-                throw new IOException("Generated robust AutoResume helper DEX is missing or invalid");
+            byte[] autoDex;
+            if (clusterBridge) {
+                autoDex = retargetHelperDex(IoUtil.readAll(context.getAssets().open(CLUSTER_BRIDGE_ASSET)), targetPackage);
+                if (!autoResume) {
+                    autoDex = IoUtil.replaceSameLength(autoDex,
+                            "AIVI_CLUSTER_AUTOR=1".getBytes(StandardCharsets.US_ASCII),
+                            "AIVI_CLUSTER_AUTOR=0".getBytes(StandardCharsets.US_ASCII));
+                    autoDex = DexUtil.repair(autoDex);
+                }
+                byte[] clusterServiceMarker = ("L" + targetPackage.replace('.', '/') + "/AutoResumeService;").getBytes(StandardCharsets.US_ASCII);
+                byte[] clusterConfigMarker = "AIVI_CLUSTER_AUTOR=".getBytes(StandardCharsets.US_ASCII);
+                if (autoDex.length < 512 || !contains(autoDex, clusterServiceMarker) || !contains(autoDex, clusterConfigMarker))
+                    throw new IOException("Generated direct BYD instrument-cluster relay DEX is missing or invalid");
+            } else {
+                autoDex = retargetHelperDex(IoUtil.readAll(context.getAssets().open(AUTO_RESUME_ASSET)), targetPackage);
+                if (autoDex.length < 512 || !contains(autoDex, "AIVI-AutoResume".getBytes(StandardCharsets.US_ASCII)))
+                    throw new IOException("Generated robust AutoResume helper DEX is missing or invalid");
+            }
             byte[] lhsDex = null;
             if (playerLeft) {
                 lhsDex = IoUtil.readAll(context.getAssets().open(PlayerPositionUtil.HOOK_ASSET));
@@ -251,7 +270,7 @@ final class ApkPatchEngine91 {
 
         // Keep Spotify 9.1.82's own trained ART profile, but bind its DEX checksums to the cloned APK.
         ProfileMetadataUtil.updateEmbeddedBaselineProfile(output);
-        verifyBaseOutput(output, targetPackage, appName, playerLeft, autoResume, modifyIcon);
+        verifyBaseOutput(output, targetPackage, appName, playerLeft, autoResume, modifyIcon, clusterBridge);
         progress.onProgress("9.1.82 package clone + provider authorities retargeted to " + targetPackage + ".");
         progress.onProgress("Embedded 9.1.82 performance profile matched to final DEX CRCs.");
         if (scaleFactor != 1f) progress.onProgress(Math.round(scaleFactor * 100f) + "% resource + Compose display scale applied from the 9.1.82 stock baseline.");
@@ -260,15 +279,17 @@ final class ApkPatchEngine91 {
         progress.onProgress("9.1.78-only login byte-offset hook remains intentionally disabled on 9.1.82.");
         progress.onProgress(playerLeft ? "Player position: LHS large-screen runtime mirror enabled." : "Player position: RHS stock layout.");
         progress.onProgress(autoResume ? "Vehicle restart playback resume enabled · robust connection/session/play verification." : "Vehicle restart playback resume disabled.");
+        if (clusterBridge) progress.onProgress("Instrument cluster: direct BYD media relay injected into " + targetPackage + "; stock com.spotify.music remains untouched.");
     }
 
-    private static void patchSplit(File source, File output, String targetPackage, float scaleFactor) throws Exception {
+    private static void patchSplit(File source, File output, String targetPackage, float scaleFactor, boolean clusterBridge) throws Exception {
         try (ZipFile zin = new ZipFile(source);
              CountingOutputStream counted = new CountingOutputStream(new FileOutputStream(output));
              ZipOutputStream zout = new ZipOutputStream(counted)) {
             ZipEntry manifestEntry = zin.getEntry("AndroidManifest.xml");
             if (manifestEntry == null) throw new IllegalArgumentException("Spotify 9.1 split manifest missing: " + source.getName());
-            byte[] manifest = Spotify91ManifestUtil.patchIdentity(IoUtil.readAll(zin.getInputStream(manifestEntry)), targetPackage);
+            byte[] manifest = IoUtil.readAll(zin.getInputStream(manifestEntry));
+            manifest = Spotify91ManifestUtil.patchIdentity(manifest, targetPackage);
             for (Enumeration<? extends ZipEntry> en = zin.entries(); en.hasMoreElements();) {
                 ZipEntry src = en.nextElement();
                 String name = src.getName();
@@ -283,7 +304,7 @@ final class ApkPatchEngine91 {
                 writeEntry(zout, counted.count, src, data);
             }
         }
-        verifySplitOutput(output, targetPackage);
+        verifySplitOutput(output, targetPackage, clusterBridge);
     }
 
     private static byte[] patchResourceIdentity(byte[] resources, String targetPackage) {
@@ -316,13 +337,23 @@ final class ApkPatchEngine91 {
     }
 
     private static void verifyBaseOutput(File output, String targetPackage, String appName,
-                                         boolean playerLeft, boolean autoResume, boolean modifiedIcon) throws Exception {
+                                         boolean playerLeft, boolean autoResume, boolean modifiedIcon,
+                                         boolean clusterBridge) throws Exception {
         try (ZipFile z = new ZipFile(output)) {
             byte[] manifest = IoUtil.readAll(z.getInputStream(z.getEntry("AndroidManifest.xml")));
             List<String> ms = Spotify91ManifestUtil.scanStrings(manifest);
-            if (!ms.contains(targetPackage) || ms.contains(BuildConfigData.OFFICIAL_PACKAGE)) throw new IllegalArgumentException("9.1 output package identity verification failed");
-            if (!ms.contains(targetPackage + ".AutoResumeService")) throw new IllegalArgumentException("9.1 AutoResume service verification failed");
-            String action = autoResume ? "byd.intent.action.RESTORE_PLAYBACK" : "byd.intent.action.RESTORE_DISABLED";
+            if (!ms.contains(targetPackage)) throw new IllegalArgumentException("9.1 output package identity verification failed");
+            if (ms.contains(BuildConfigData.OFFICIAL_PACKAGE)) throw new IllegalArgumentException("9.1 clone still contains official package identity");
+            String expectedService = targetPackage + ".AutoResumeService";
+            if (!ms.contains(expectedService)) throw new IllegalArgumentException("9.1 playback/cluster service verification failed");
+            if (clusterBridge) {
+                Spotify89ManifestUtil.verifyExportedServiceWithoutPermission(manifest, expectedService);
+                for (String permission : Spotify91ManifestUtil.BYD_CLUSTER_PERMISSIONS) {
+                    if (ManifestElementUtil.countRootStringElement(manifest, "uses-permission", permission) != 1)
+                        throw new IllegalArgumentException("9.1 BYD instrument permission verification failed: " + permission);
+                }
+            }
+            String action = (clusterBridge || autoResume) ? "byd.intent.action.RESTORE_PLAYBACK" : "byd.intent.action.RESTORE_DISABLED";
             if (!ms.contains(action)) throw new IllegalArgumentException("9.1 AutoResume trigger verification failed");
             byte[] resources = IoUtil.readAll(z.getInputStream(z.getEntry("resources.arsc")));
             if (!contains(resources, targetPackage.getBytes(StandardCharsets.UTF_16LE))) throw new IllegalArgumentException("9.1 resource package identity verification failed");
@@ -330,8 +361,14 @@ final class ApkPatchEngine91 {
             if (!containsResourceString(resources, appName)) throw new IllegalArgumentException("9.1 app label verification failed");
             if (z.getEntry(AUTO_RESUME_DEX) == null) throw new IllegalArgumentException("9.1 AutoResume helper DEX missing");
             byte[] resumeDex = IoUtil.readAll(z.getInputStream(z.getEntry(AUTO_RESUME_DEX)));
-            if (!contains(resumeDex, "AIVI-AutoResume".getBytes(StandardCharsets.US_ASCII)))
+            if (clusterBridge) {
+                byte[] serviceMarker = ("L" + targetPackage.replace('.', '/') + "/AutoResumeService;").getBytes(StandardCharsets.US_ASCII);
+                byte[] configMarker = "AIVI_CLUSTER_AUTOR=".getBytes(StandardCharsets.US_ASCII);
+                if (!contains(resumeDex, serviceMarker) || !contains(resumeDex, configMarker))
+                    throw new IllegalArgumentException("9.1 BYD cluster bridge verification failed");
+            } else if (!contains(resumeDex, "AIVI-AutoResume".getBytes(StandardCharsets.US_ASCII))) {
                 throw new IllegalArgumentException("9.1 robust AutoResume helper verification failed");
+            }
             if (playerLeft && z.getEntry(LHS_DEX) == null) throw new IllegalArgumentException("9.1 LHS helper DEX missing");
             if (!playerLeft && z.getEntry(LHS_DEX) != null) throw new IllegalArgumentException("Unexpected 9.1 LHS helper DEX");
             if (modifiedIcon && z.getEntry(IconBrandingUtil.ADAPTIVE_FOREGROUND_PNG) == null) throw new IllegalArgumentException("9.1 branded adaptive launcher icon missing");
@@ -355,12 +392,13 @@ final class ApkPatchEngine91 {
         } catch (Exception ignored) { return false; }
     }
 
-    private static void verifySplitOutput(File output, String targetPackage) throws Exception {
+    private static void verifySplitOutput(File output, String targetPackage, boolean clusterBridge) throws Exception {
         try (ZipFile z = new ZipFile(output)) {
             ZipEntry me = z.getEntry("AndroidManifest.xml");
             if (me == null) throw new IllegalArgumentException("Patched 9.1 split manifest missing");
             List<String> ms = Spotify91ManifestUtil.scanStrings(IoUtil.readAll(z.getInputStream(me)));
-            if (!ms.contains(targetPackage) || ms.contains(BuildConfigData.OFFICIAL_PACKAGE)) throw new IllegalArgumentException("Spotify 9.1 split package identity verification failed: " + output.getName());
+            if (!ms.contains(targetPackage) || ms.contains(BuildConfigData.OFFICIAL_PACKAGE))
+                throw new IllegalArgumentException("Spotify 9.1 split package identity verification failed: " + output.getName());
         }
     }
 

@@ -10,8 +10,8 @@ android {
         applicationId 'com.bydspotifymanager.app'
         minSdk 28
         targetSdk 35
-        versionCode 200
-        versionName '2.0'
+        versionCode 210
+        versionName '2.1'
     }
 
     buildTypes {
@@ -39,7 +39,10 @@ android {
         main {
             assets.srcDir("$buildDir/generated/lhsHookAssets")
             assets.srcDir("$buildDir/generated/autoResumeAssets")
+            assets.srcDir("$buildDir/generated/clusterBridgeAssets")
             assets.srcDir("$buildDir/generated/abrpDirectHookAssets")
+            assets.srcDir("$buildDir/generated/wazeDebugLoggerAssets")
+            assets.srcDir("$buildDir/generated/abrpDebugLoggerAssets")
         }
     }
 }
@@ -177,6 +180,73 @@ tasks.register('dexAutoResume', Exec) {
 }
 
 
+// BYD instrument-cluster relay for Spotify 8.9 and 9.1 clones. The injected service runs
+// inside the selected com.spotify.musia/com.spotify.musib package, reads its MediaSession and
+// mirrors title/state/progress to BYDAutoInstrumentDevice without touching stock com.spotify.music.
+def clusterBridgeSrcDir = file("$projectDir/clusterbridgesrc")
+def clusterBridgeClassesDir = layout.buildDirectory.dir('clusterBridge/classes')
+def clusterBridgeJarFile = layout.buildDirectory.file('clusterBridge/cluster_bridge.jar')
+def clusterBridgeAssetsDir = layout.buildDirectory.dir('generated/clusterBridgeAssets/cluster_bridge')
+
+tasks.register('compileClusterBridge', JavaCompile) {
+    source = fileTree(clusterBridgeSrcDir) { include '**/*.java' }
+    classpath = files(new File(android.sdkDirectory, 'platforms/android-35/android.jar'))
+    destinationDirectory.set(clusterBridgeClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarClusterBridge', Jar) {
+    dependsOn 'compileClusterBridge'
+    archiveFileName.set('cluster_bridge.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('clusterBridge'))
+    from(clusterBridgeClassesDir)
+}
+
+tasks.register('dexClusterBridge', Exec) {
+    dependsOn 'jarClusterBridge'
+    inputs.file(clusterBridgeJarFile)
+    outputs.file(layout.buildDirectory.file('generated/clusterBridgeAssets/cluster_bridge/classes.dex'))
+    doFirst {
+        File sdk = android.sdkDirectory
+        boolean isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        String d8Name = isWindows ? 'd8.bat' : 'd8'
+        File buildToolsRoot = new File(sdk, 'build-tools')
+        File[] candidates = buildToolsRoot.listFiles({ File f -> new File(f, d8Name).isFile() } as FileFilter)
+        if (candidates == null || candidates.length == 0) {
+            throw new GradleException("Android SDK build-tools with ${d8Name} were not found under ${buildToolsRoot}")
+        }
+        Arrays.sort(candidates, { File a, File b -> a.name <=> b.name } as Comparator<File>)
+        File d8 = new File(candidates[candidates.length - 1], d8Name)
+        File outDir = clusterBridgeAssetsDir.get().asFile
+        if (outDir.exists() && !outDir.deleteDir()) {
+            throw new GradleException("Could not clean ClusterBridge output directory: ${outDir}")
+        }
+        outDir.mkdirs()
+        File androidJar = new File(sdk, 'platforms/android-35/android.jar')
+        if (!androidJar.isFile()) {
+            throw new GradleException('Android 35 platform is required to build the ClusterBridge helper')
+        }
+        if (isWindows) {
+            commandLine 'cmd', '/c', d8.absolutePath,
+                    '--release', '--min-api', '28', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, clusterBridgeJarFile.get().asFile.absolutePath
+        } else {
+            commandLine d8.absolutePath,
+                    '--release', '--min-api', '28', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, clusterBridgeJarFile.get().asFile.absolutePath
+        }
+    }
+    doLast {
+        File dex = new File(clusterBridgeAssetsDir.get().asFile, 'classes.dex')
+        if (!dex.isFile() || dex.length() < 512) {
+            throw new GradleException('ClusterBridge helper DEX was not generated')
+        }
+    }
+}
+
+
 def abrpDirectHookSrcDir = file("$projectDir/abrpdirecthooksrc")
 def abrpDirectHookStubSrcDir = file("$projectDir/abrpdirecthookstubs")
 def abrpDirectHookStubClassesDir = layout.buildDirectory.dir('abrpDirectHookStub/classes')
@@ -269,7 +339,140 @@ tasks.register('dexAbrpDirectHook', Exec) {
 }
 
 
-tasks.named('preBuild').configure { dependsOn 'dexLhsHook', 'dexAutoResume', 'dexAbrpDirectHook' }
+
+// Optional five-minute Waze startup logger. This tiny standalone DEX is injected only when
+// the red Waze 5.24 troubleshooting toggle is enabled. It uses Android framework APIs only.
+def wazeDebugLoggerSrcDir = file("$projectDir/wazeloggersrc")
+def wazeDebugLoggerClassesDir = layout.buildDirectory.dir('wazeDebugLogger/classes')
+def wazeDebugLoggerJarFile = layout.buildDirectory.file('wazeDebugLogger/waze_debug_logger.jar')
+def wazeDebugLoggerAssetsDir = layout.buildDirectory.dir('generated/wazeDebugLoggerAssets/waze_debug_logger')
+
+tasks.register('compileWazeDebugLogger', JavaCompile) {
+    source = fileTree(wazeDebugLoggerSrcDir) { include '**/*.java' }
+    classpath = files(new File(android.sdkDirectory, 'platforms/android-35/android.jar'))
+    destinationDirectory.set(wazeDebugLoggerClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarWazeDebugLogger', Jar) {
+    dependsOn 'compileWazeDebugLogger'
+    archiveFileName.set('waze_debug_logger.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('wazeDebugLogger'))
+    from(wazeDebugLoggerClassesDir)
+}
+
+tasks.register('dexWazeDebugLogger', Exec) {
+    dependsOn 'jarWazeDebugLogger'
+    inputs.file(wazeDebugLoggerJarFile)
+    outputs.file(layout.buildDirectory.file('generated/wazeDebugLoggerAssets/waze_debug_logger/classes.dex'))
+    doFirst {
+        File sdk = android.sdkDirectory
+        boolean isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        String d8Name = isWindows ? 'd8.bat' : 'd8'
+        File buildToolsRoot = new File(sdk, 'build-tools')
+        File[] candidates = buildToolsRoot.listFiles({ File f -> new File(f, d8Name).isFile() } as FileFilter)
+        if (candidates == null || candidates.length == 0) {
+            throw new GradleException("Android SDK build-tools with ${d8Name} were not found under ${buildToolsRoot}")
+        }
+        Arrays.sort(candidates, { File a, File b -> a.name <=> b.name } as Comparator<File>)
+        File d8 = new File(candidates[candidates.length - 1], d8Name)
+        File outDir = wazeDebugLoggerAssetsDir.get().asFile
+        if (outDir.exists() && !outDir.deleteDir()) {
+            throw new GradleException("Could not clean Waze debug logger output directory: ${outDir}")
+        }
+        outDir.mkdirs()
+        File androidJar = new File(sdk, 'platforms/android-35/android.jar')
+        if (!androidJar.isFile()) {
+            throw new GradleException('Android 35 platform is required to build the Waze debug logger')
+        }
+        if (isWindows) {
+            commandLine 'cmd', '/c', d8.absolutePath,
+                    '--release', '--min-api', '29', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, wazeDebugLoggerJarFile.get().asFile.absolutePath
+        } else {
+            commandLine d8.absolutePath,
+                    '--release', '--min-api', '29', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, wazeDebugLoggerJarFile.get().asFile.absolutePath
+        }
+    }
+    doLast {
+        File dex = new File(wazeDebugLoggerAssetsDir.get().asFile, 'classes.dex')
+        if (!dex.isFile() || dex.length() < 256) {
+            throw new GradleException('Waze debug logger DEX was not generated')
+        }
+    }
+}
+
+
+
+// Optional five-minute ABRP startup logger. This is a separate DEX/provider from Waze so
+// debug-patched Waze and ABRP can coexist without a ContentProvider authority collision.
+def abrpDebugLoggerSrcDir = file("$projectDir/abrpdebugloggersrc")
+def abrpDebugLoggerClassesDir = layout.buildDirectory.dir('abrpDebugLogger/classes')
+def abrpDebugLoggerJarFile = layout.buildDirectory.file('abrpDebugLogger/abrp_debug_logger.jar')
+def abrpDebugLoggerAssetsDir = layout.buildDirectory.dir('generated/abrpDebugLoggerAssets/abrp_debug_logger')
+
+tasks.register('compileAbrpDebugLogger', JavaCompile) {
+    source = fileTree(abrpDebugLoggerSrcDir) { include '**/*.java' }
+    classpath = files(new File(android.sdkDirectory, 'platforms/android-35/android.jar'))
+    destinationDirectory.set(abrpDebugLoggerClassesDir)
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('jarAbrpDebugLogger', Jar) {
+    dependsOn 'compileAbrpDebugLogger'
+    archiveFileName.set('abrp_debug_logger.jar')
+    destinationDirectory.set(layout.buildDirectory.dir('abrpDebugLogger'))
+    from(abrpDebugLoggerClassesDir)
+}
+
+tasks.register('dexAbrpDebugLogger', Exec) {
+    dependsOn 'jarAbrpDebugLogger'
+    inputs.file(abrpDebugLoggerJarFile)
+    outputs.file(layout.buildDirectory.file('generated/abrpDebugLoggerAssets/abrp_debug_logger/classes.dex'))
+    doFirst {
+        File sdk = android.sdkDirectory
+        boolean isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        String d8Name = isWindows ? 'd8.bat' : 'd8'
+        File buildToolsRoot = new File(sdk, 'build-tools')
+        File[] candidates = buildToolsRoot.listFiles({ File f -> new File(f, d8Name).isFile() } as FileFilter)
+        if (candidates == null || candidates.length == 0) {
+            throw new GradleException("Android SDK build-tools with ${d8Name} were not found under ${buildToolsRoot}")
+        }
+        Arrays.sort(candidates, { File a, File b -> a.name <=> b.name } as Comparator<File>)
+        File d8 = new File(candidates[candidates.length - 1], d8Name)
+        File outDir = abrpDebugLoggerAssetsDir.get().asFile
+        if (outDir.exists() && !outDir.deleteDir()) {
+            throw new GradleException("Could not clean ABRP debug logger output directory: ${outDir}")
+        }
+        outDir.mkdirs()
+        File androidJar = new File(sdk, 'platforms/android-35/android.jar')
+        if (!androidJar.isFile()) {
+            throw new GradleException('Android 35 platform is required to build the ABRP debug logger')
+        }
+        if (isWindows) {
+            commandLine 'cmd', '/c', d8.absolutePath,
+                    '--release', '--min-api', '29', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, abrpDebugLoggerJarFile.get().asFile.absolutePath
+        } else {
+            commandLine d8.absolutePath,
+                    '--release', '--min-api', '29', '--lib', androidJar.absolutePath,
+                    '--output', outDir.absolutePath, abrpDebugLoggerJarFile.get().asFile.absolutePath
+        }
+    }
+    doLast {
+        File dex = new File(abrpDebugLoggerAssetsDir.get().asFile, 'classes.dex')
+        if (!dex.isFile() || dex.length() < 256) {
+            throw new GradleException('ABRP debug logger DEX was not generated')
+        }
+    }
+}
+
+tasks.named('preBuild').configure { dependsOn 'dexLhsHook', 'dexAutoResume', 'dexClusterBridge', 'dexAbrpDirectHook', 'dexWazeDebugLogger', 'dexAbrpDebugLogger' }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.1'

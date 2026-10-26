@@ -53,7 +53,8 @@ final class AbrpPatchUtil {
     // ABRP starts with engine alias "native" (string ID 36501 / 0x8e95) and
     // voice alias "en" (string ID 36004 / 0x8ca4) already selected. Both
     // aliases already exist in the stock Hermes string table; the injected
-    // TextToSpeech facade maps them to BYD Cerence / Zoe. To keep the HBC
+    // TextToSpeech facade maps them to BYD Cerence; "en" is the fresh default while
+    // the facade exposes every Cerence voice installed in the vehicle. To keep the HBC
     // literal buffer byte-for-byte the same size, releaseNotesVersion changes
     // from integer 0 to null (equivalent first-run/no-version state here) and
     // one later Undefined run uses the valid two-byte extended SLP header.

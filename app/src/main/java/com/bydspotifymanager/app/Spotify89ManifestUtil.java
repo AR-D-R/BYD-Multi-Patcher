@@ -39,6 +39,39 @@ final class Spotify89ManifestUtil {
 
     static boolean isOriginalPackage(byte[] data) { return scanStrings(data).contains(OLD_PACKAGE); }
 
+    static void verifyExportedServiceWithoutPermission(byte[] data, String serviceName) {
+        int rootHs=Spotify89BinaryUtil.u16(data,2);
+        Spotify89BinaryUtil.Pool meta=Spotify89BinaryUtil.parsePool(data,rootHs);
+        List<String> strings=meta.strings;
+        int o=rootHs+meta.size;
+        if(o+8<=data.length&&Spotify89BinaryUtil.u16(data,o)==0x0180)o+=Spotify89BinaryUtil.i32(data,o+4);
+        while(o+8<=data.length){
+            int typ=Spotify89BinaryUtil.u16(data,o),sz=Spotify89BinaryUtil.i32(data,o+4);
+            if(sz<8||o+sz>data.length)throw new IllegalArgumentException("Bad manifest chunk while verifying cluster bridge");
+            if(typ==0x0102&&"service".equals(strings.get(Spotify89BinaryUtil.i32(data,o+20)))){
+                int attrStart=Spotify89BinaryUtil.u16(data,o+24),attrSize=Spotify89BinaryUtil.u16(data,o+26),attrCount=Spotify89BinaryUtil.u16(data,o+28),ap=o+16+attrStart;
+                boolean target=false,exported=false,enabled=true,permission=false;
+                for(int i=0;i<attrCount;i++){
+                    int ao=ap+i*attrSize,nameIdx=Spotify89BinaryUtil.i32(data,ao+4),rawIdx=Spotify89BinaryUtil.i32(data,ao+8),dtype=data[ao+15]&0xff,dval=Spotify89BinaryUtil.i32(data,ao+16);
+                    String name=strings.get(nameIdx);
+                    String value=rawIdx!=Spotify89BinaryUtil.NO_INDEX?strings.get(rawIdx):(dtype==3&&dval>=0&&dval<strings.size()?strings.get(dval):null);
+                    if("name".equals(name)&&serviceName.equals(value))target=true;
+                    else if("exported".equals(name))exported=dval!=0;
+                    else if("enabled".equals(name))enabled=dval!=0;
+                    else if("permission".equals(name))permission=true;
+                }
+                if(target){
+                    if(!enabled)throw new IllegalArgumentException("BYD cluster bridge service is disabled");
+                    if(!exported)throw new IllegalArgumentException("BYD cluster bridge service is not exported");
+                    if(permission)throw new IllegalArgumentException("BYD cluster bridge service still has a bind permission");
+                    return;
+                }
+            }
+            o+=sz;
+        }
+        throw new IllegalArgumentException("BYD cluster bridge service was not found while verifying manifest");
+    }
+
     static VersionInfo versionInfo(byte[] data) {
         int rootHs=Spotify89BinaryUtil.u16(data,2);
         Spotify89BinaryUtil.Pool meta=Spotify89BinaryUtil.parsePool(data,rootHs);
@@ -88,8 +121,22 @@ final class Spotify89ManifestUtil {
         return b;
     }
 
+    static final String[] BYD_CLUSTER_PERMISSIONS={
+            "android.permission.BYDAUTO_INSTRUMENT_COMMON",
+            "android.permission.BYDAUTO_INSTRUMENT_GET",
+            "android.permission.BYDAUTO_INSTRUMENT_SET"
+    };
+
     static byte[] patchAutoResume(byte[] data, String newPackage) {
-        String resumeService=newPackage+".AutoResumeService";
+        return patchPlaybackService(data,newPackage+".AutoResumeService",false);
+    }
+
+    static byte[] patchDirectCluster(byte[] data, String newPackage) {
+        byte[] out=patchPlaybackService(data,newPackage+".AutoResumeService",true);
+        return ManifestElementUtil.addRootStringElements(out,"uses-permission",BYD_CLUSTER_PERMISSIONS);
+    }
+
+    private static byte[] patchPlaybackService(byte[] data,String resumeService,boolean clusterBridge) {
         Map<String,String> replacements=new LinkedHashMap<>();
         replacements.put("android.media.MediaRoute2ProviderService","byd.intent.action.RESTORE_PLAYBACK");
         replacements.put("com.spotify.connect.mediarouteprovider.SpotifyMediaRouteProviderService",resumeService);
@@ -108,13 +155,18 @@ final class Spotify89ManifestUtil {
                 List<Attr> attrs=new ArrayList<>();
                 for(int i=0;i<attrCount;i++){ int ao=ap+i*attrSize, ni=Spotify89BinaryUtil.i32(c,ao+4), raw=Spotify89BinaryUtil.i32(c,ao+8), dt=c[ao+15]&0xff, dv=Spotify89BinaryUtil.i32(c,ao+16); String val=raw!=Spotify89BinaryUtil.NO_INDEX?ss.get(raw):(dt==3&&dv>=0&&dv<ss.size()?ss.get(dv):null); attrs.add(new Attr(ss.get(ni),ao,ni,dt,dv,raw,val)); }
                 if("service".equals(tag) && attrs.stream().anyMatch(a->"name".equals(a.name)&&resumeService.equals(a.value))){
-                    found=true;
-                    for(Attr a:attrs) if("enabled".equals(a.name)){ if(a.dtype!=0x12||a.dval!=0)throw new IllegalArgumentException("Unexpected restore service enabled state"); Spotify89BinaryUtil.put32(c,a.off+16,0xffffffff); }
+                    found=true;int permissionIndex=-1;
+                    for(int i=0;i<attrs.size();i++){Attr a=attrs.get(i);
+                        if("enabled".equals(a.name)){ if(a.dtype!=0x12||a.dval!=0)throw new IllegalArgumentException("Unexpected restore service enabled state"); Spotify89BinaryUtil.put32(c,a.off+16,0xffffffff); }
+                        else if("exported".equals(a.name)){ if(a.dtype!=0x12)throw new IllegalArgumentException("Unexpected restore service exported type"); Spotify89BinaryUtil.put32(c,a.off+16,0xffffffff); }
+                        else if(clusterBridge&&"permission".equals(a.name))permissionIndex=i;
+                    }
+                    if(permissionIndex>=0){int removePos=ap+permissionIndex*attrSize;byte[] nc=new byte[c.length-attrSize];System.arraycopy(c,0,nc,0,removePos);System.arraycopy(c,removePos+attrSize,nc,removePos,c.length-removePos-attrSize);c=nc;Spotify89BinaryUtil.put32(c,4,sz-attrSize);attrCount--;attrs.remove(permissionIndex);}
                     int fgIdx=ss.indexOf("foregroundServiceType"), androidNs=ss.indexOf("http://schemas.android.com/apk/res/android"); if(fgIdx<0||androidNs<0)throw new IllegalArgumentException("Manifest foregroundServiceType metadata missing");
                     byte[] attr=new byte[20]; Spotify89BinaryUtil.put32(attr,0,androidNs); Spotify89BinaryUtil.put32(attr,4,fgIdx); Spotify89BinaryUtil.put32(attr,8,0xffffffff); Spotify89BinaryUtil.put16(attr,12,8); attr[14]=0; attr[15]=0x11; Spotify89BinaryUtil.put32(attr,16,2);
                     int targetRid=fgIdx<resmap.size()?resmap.get(fgIdx):0xffffffff, ins=attrCount;
                     for(int i=0;i<attrs.size();i++){ int rid=attrs.get(i).nameIdx<resmap.size()?resmap.get(attrs.get(i).nameIdx):0xffffffff; if(Integer.compareUnsigned(rid,targetRid)>0){ins=i;break;} }
-                    int insertPos=ap+ins*attrSize; byte[] nc=new byte[c.length+attrSize]; System.arraycopy(c,0,nc,0,insertPos); System.arraycopy(attr,0,nc,insertPos,attr.length); System.arraycopy(c,insertPos,nc,insertPos+attrSize,c.length-insertPos); c=nc; Spotify89BinaryUtil.put32(c,4,sz+attrSize); Spotify89BinaryUtil.put16(c,28,attrCount+1);
+                    int insertPos=ap+ins*attrSize; byte[] nc=new byte[c.length+attrSize]; System.arraycopy(c,0,nc,0,insertPos); System.arraycopy(attr,0,nc,insertPos,attr.length); System.arraycopy(c,insertPos,nc,insertPos+attrSize,c.length-insertPos); c=nc; Spotify89BinaryUtil.put32(c,4,c.length); Spotify89BinaryUtil.put16(c,28,attrCount+1);
                 }
             }
             chunks.add(c); o+=sz;

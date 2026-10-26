@@ -1,5 +1,7 @@
 package com.bydspotifymanager.app;
 
+import android.content.Context;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -44,11 +46,17 @@ final class WazePatchEngine {
         }
     }
 
-    private static final Set<String> REQUIRED_SPLITS = new LinkedHashSet<>(Arrays.asList(
+    private static final Set<String> WAZE24_REQUIRED_SPLITS = new LinkedHashSet<>(Arrays.asList(
             "base.apk",
             "split_config.arm64_v8a.apk",
             "split_config.xxhdpi.apk",
             "split_config.xxxhdpi.apk"
+    ));
+
+    private static final Set<String> WAZE59_REQUIRED_SPLITS = new LinkedHashSet<>(Arrays.asList(
+            "base.apk",
+            "split_config.arm64_v8a.apk",
+            "split_config.armeabi_v7a.apk"
     ));
 
     private static final PatchRegion[] STABLE_CLASSES5_PATCHES = new PatchRegion[] {
@@ -58,12 +66,14 @@ final class WazePatchEngine {
                     "52873baddb0707050000000000002200861b76083ad600001100000001000100000000003e03490003000000520040ad0f00000001000100000000003e03490003000000520041ad0f00000001000100000000003e0349000300000052003bad0f00000001000100000000003e0349000300000013000000")
     };
 
-    private static final PatchRegion[] STABLE_CLASSES6_PATCHES = new PatchRegion[] {
+    private static final PatchRegion[] STABLE_AUDIO_CLASSES6_PATCHES = new PatchRegion[] {
             // Audio SDK / music button startup state: default “Show on map” to OFF at process launch.
             new PatchRegion(0x358e80,
                     "70100ef502006200d20b6e10c42c00000c001a01fa6371201bef10005b201b310e00",
-                    "70100ef502006200d20b62018d476e200c2c10006e10c42c00000c005b201b310e00"),
-            // Speedometer: Waze's landscape Row gives the left panel weight 0.44921875 and the map
+                    "70100ef502006200d20b62018d476e200c2c10006e10c42c00000c005b201b310e00")
+    };
+
+    private static final PatchRegion[] STABLE_CLASSES6_PATCHES = new PatchRegion[] {            // Speedometer: Waze's landscape Row gives the left panel weight 0.44921875 and the map
             // section weight 1.0. The speedometer lives inside that map section, so centring the entire
             // map parent lands too far right. Fill only (1 - panelWeight) = 0.55078125 of the map parent
             // and then wrap to CenterHorizontally: the resulting centre is exactly the midpoint of the
@@ -114,10 +124,10 @@ final class WazePatchEngine {
             new PatchRegion(0x3a8156,
                     "620157451203713011ec19030c03",
                     "1501a04100007120350319000c03"),
-            // Active-navigation final viewport placement: use 0.56f.
+            // Active-navigation final viewport placement: use 0.53f (slightly higher vehicle position).
             new PatchRegion(0x3bc4fa,
                     "1205713029ef56010a05",
-                    "1405295c0f3f00000000"),
+                    "140514ae073f00000000"),
             // Landscape NavigationInstructionsBarColumn: shift the actual manoeuvre/instruction
             // column down by 16dp before it is passed into NavigationInstructionsBarColumn.
             // This targets the visible black navigation card rather than unrelated safe-content
@@ -275,10 +285,10 @@ private static final PatchRegion[] BETA_CLASSES6_PATCHES = new PatchRegion[] {
             new PatchRegion(0x3be88e,
                     "62018646120371309cee19030c03",
                     "1501a041000071207d0319000c03"),
-            // Active-navigation final viewport placement: use 0.56f.
+            // Active-navigation final viewport placement: use 0.53f (slightly higher vehicle position).
             new PatchRegion(0x3d2c32,
                     "12057130e2f156010a05",
-                    "1405295c0f3f00000000")
+                    "140514ae073f00000000")
     };
 
 private static final PatchRegion[] BETA_CLASSES7_PATCHES = new PatchRegion[] {
@@ -288,6 +298,228 @@ private static final PatchRegion[] BETA_CLASSES7_PATCHES = new PatchRegion[] {
                     "380005001500dc420f00150070420f00")
     };
 
+/**
+ * Waze 5.9.5.4 legacy profile. This version uses a different DEX/layout generation from 5.24,
+ * so only changes verified against the exact uploaded 5.9.5.4 base are enabled here.
+ */
+private static final PatchRegion[] LEGACY_CLASSES3_PATCHES = new PatchRegion[] {
+        // Legacy report overlay helper: keep sensor-landscape instead of generic sensor.
+        new PatchRegion(0x47c128, "1241", "1261"),
+        // Another report overlay path forwards a computed orientation. Leave the current
+        // landscape request untouched by suppressing this follow-up override.
+        new PatchRegion(0x47b9d0, "6e20671d1000", "000000000000")
+};
+
+private static final PatchRegion[] LEGACY_CLASSES4_PATCHES = new PatchRegion[] {
+        // MainActivity helper methods: USER -> SENSOR_LANDSCAPE.
+        new PatchRegion(0x2d19ec, "1220", "1260"),
+        new PatchRegion(0x2d2b7c, "1220", "1260"),
+        // Secondary orientation helper used on one legacy path: suppress its runtime override.
+        new PatchRegion(0x2d01f2, "6e207f420200", "000000000000"),
+        // MainActivity runtime orientation switches. Keep BYD / BlueStacks in landscape by
+        // disabling these later overrides after launch.
+        new PatchRegion(0x2d22ec, "6e207f423500", "000000000000"),
+        new PatchRegion(0x2d2316, "6e207f426500", "000000000000"),
+        new PatchRegion(0x2d231e, "6e207f422500", "000000000000"),
+};
+
+/** Optional Waze 5.9 audio controls default. */
+private static final PatchRegion[] LEGACY_AUDIO_CLASSES4_PATCHES = new PatchRegion[] {
+        // Audio player -> Show on the map: Boolean.TRUE -> Boolean.FALSE.
+        new PatchRegion(0x3654d0, "6200449a", "6200439a")
+};
+
+/** Optional Waze 5.9 EV + CCS2 defaults, controlled by the patcher's Enable EV features toggle. */
+private static final PatchRegion[] LEGACY_EV_CLASSES4_PATCHES = new PatchRegion[] {
+        // Electric vehicles -> Turn on EV features: Boolean.FALSE -> Boolean.TRUE.
+        new PatchRegion(0x363190, "6200439a", "6200449a"),
+        // Electric vehicles -> Plugs: empty string -> CCS_TYPE2 (shown in the UI as CCS2).
+        new PatchRegion(0x370630, "1a000000", "1a004210"),
+
+        // Persist EV=true BEFORE the EV repository StateFlows are created. This mirrors the
+        // proven newer-Waze strategy and also upgrades an existing installation whose saved
+        // config still says EV=false.
+        new PatchRegion(0x3a60da,
+                "1a031d97712027e03000",
+                "6203449a6e20c6803000"),
+        // Persist CCS_TYPE2 through Waze's real ConfigValue<String> setter before the connector
+        // StateFlow is constructed. CCS_TYPE2 already exists in Waze 5.9's DEX string table.
+        new PatchRegion(0x3a60f0,
+                "1a002197712027e00100",
+                "1a0042106e20d0800100")
+};
+
+private static final PatchRegion[] LEGACY_AUDIO_CLASSES5_PATCHES = new PatchRegion[] {
+        // Persist "Show on the map" = OFF through Waze's real SdkConfiguration.enableAudioSdk(false) path.
+        new PatchRegion(0x46a3ec,
+                "1a0075a971205cde0200",
+                "1200711098cc00000000")
+};
+
+private static final PatchRegion[] LEGACY_CLASSES5_PATCHES = new PatchRegion[] {
+        // PreDrive/general-map vehicle anchor.
+        //
+        // The final active-navigation test proved that nativeUpdateUserLocationInsets is the
+        // winning vertical control, but forcing that value globally to 200px also replaced this
+        // screen's larger adaptive inset and pulled the free-drive/pre-route vehicle downward.
+        //
+        // The final JNI path below now adds +116px to the original inset instead.  Compensate the
+        // pre-route geometry here by using height / 5 instead of height / 3.  At the 240dpi
+        // 1080p BYD/BlueStacks layout this leaves the pre-route car close to its previously-good
+        // position while allowing the smaller active-navigation inset to be raised independently.
+        new PatchRegion(0x46409c,
+                "7220431e31000a08b686",
+                "db0307051218b6860000"),
+        // MainMapGeometry.leftMargin getter: return zero so the map viewport uses the full
+        // landscape width instead of remaining horizontally biased by the legacy side margin.
+        new PatchRegion(0x1e27f4,
+                "5210bf0d",
+                "13000000"),
+        // Final Java -> native user-location inset adjustment.
+        //
+        // MainCanvasDelegatorImpl$c$a.g(...) reads the four map margins, updates native margins,
+        // then reads MainMapGeometry.carIndicationToBottom through d() and forwards that integer
+        // to nativeUpdateUserLocationInsets().
+        //
+        // Keep the original dynamic car inset (so each map state can still supply its own value)
+        // and add +124 physical pixels immediately before JNI.  The previous +116px balanced
+        // build put the active-navigation car in the right region, but the latest visual test
+        // still wants it just slightly higher.  Raising the additive lift by another 8px keeps
+        // the proven state-specific behaviour while nudging the vehicle upward only a little.
+        //
+        // To make room without changing the DEX method size, replace the existing call to
+        // MainMapGeometry.f() with const/4 v1,0.  f() is already patched above to return zero,
+        // so this is semantically identical and frees three code units.  Two are used by
+        // add-int/lit8 v4,v4,+124 and one is kept as a harmless NOP before the next getter.
+        new PatchRegion(0x2feccc,
+                "6e10a92104000a056e10a32104000a006e10a72104000a016e10a82104000a0271524d8e53106e10a42104000a0471204e8e430062034b7f1103",
+                "6e10a92104000a056e10a32104000a00120100006e10a82104000a0271524d8e53106e10a42104000a04d804047c71204e8e430062034b7f1103"),
+        // Shared PreDrive/MidDrive speedometer layout. This restores the later known-good
+        // Waze 5.9 geometry instead of the older caller-specific TopCenter / -32dp experiments:
+        //   fillMaxWidth(0.55078125) -> wrapContentSize(TopCenter) -> offset(-12dp, -24dp).
+        // The extra 4dp left correction aligns the overview speedometer with the measured car centre.
+        // The 110-byte rewrite also creates the AndroidView factory directly, removing only its
+        // redundant remembered-value cache while preserving the following update lambda/group.
+        new PatchRegion(0x1c10ea,
+                "6207090571511ad179210c011302eeff82227110e91e02000a021307f4ff82777110e91e07000a0771300b1e21070c021401fe213c6e7220571e1c007210541e0c000c0162078b0c6e10401e07000c0833810a0022017a0570106e12010072205b1e1c001f01432872104c1e0c00",
+                "140400000d3f120871401f1e49880c0262048d0c6e108c1e04000c047158251e42880c02150440c11508c0c171300b1e42080c0222017a0570106e12010062078b0c0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+        // PreDrive LandscapeMainContent top-left menu/notification Box: replace the legacy
+        // wrapContentHeight modifier with offset(y=+16dp), lowering the hamburger/top-left
+        // overlay without affecting the navigation/MidDrive layout. Same-size DEX rewrite.
+        new PatchRegion(0x4639fe,
+                "120712387151241e10870c00",
+                "1507804171300b1e10070c00"),
+        // PreDrive ButtonPack: use the later known-good +32dp top-control offset.
+        // This keeps the top-right audio/music control clear of the thicker BYD top panel.
+        new PatchRegion(0x462912,
+                "dd00040ee1030406d5348003b640d533001c960d0003120e",
+                "12001503004271300b1e09030c09120d120e000000000000"),
+        // Active-navigation speedometer alignment.
+        //
+        // Compensate the shared -4dp overview correction here: -172dp -> -168dp X,
+        // while retaining +8dp Y at the MidDrive caller,
+        // lowering the navigation speedometer by about 12px at 240dpi without touching the
+        // shared PreDrive/overview speedometer layout. Latest screenshots show the active-nav
+        // car and speedometer X centres differ by only about 1.5px, so the net active-nav
+        // horizontal position is intentionally unchanged.
+        //
+        // Use const/high16 for both exact float values so the replacement remains 16 bytes:
+        //   -168.0f = 0xC3280000, +8.0f = 0x41000000.
+        // The ffff method reference is resolved to OffsetKt.offset-VpY3zN4 in classes5.dex.
+        new PatchRegion(0x3f64c0,
+                "620c0905122e120f715f1ad1caef0c0c",
+                "150c28c3150e00417130ffffca0e0c0c"),
+        // Landscape navigation instruction card: add a direct +16dp Y offset to the modifier
+        // that is passed into NavigationInstructionsBarColumn. This mirrors the already-good
+        // free-drive hamburger offset and leaves the BYD-thickness top system panel clear.
+        new PatchRegion(0x3f5412,
+                "e103020cdd03030ed6330060b630e0030203d5338003b630e1020206d522001cb620",
+                "12031505804171300b1e36050c061200000000000000000000000000000000000000"),
+        // MidDrive / general-map top-right ButtonPack (music/audio control): shift the actual
+        // shared ButtonPack wrapper down by +16dp. The visible pink music button is rendered through
+        // LandscapeSideMapContent -> ButtonPackWrapper (j6.S.P) -> ButtonPack -> AudioSdkButtonV1.
+        //
+        // Do this inside ButtonPackWrapper rather than clobbering the f0 caller registers (the older
+        // 0x3f5dd2 experiment overwrote a live j6.v0 parameter and caused ART VerifyError). This
+        // rewrite preserves both callback objects and the Composer, applies offset(0dp,+16dp) to the
+        // incoming aligned TopEnd modifier, and passes changed/default masks as zero so Compose
+        // recomputes them. +16dp is 24px at the 240dpi BYD/BlueStacks test density and matches the
+        // known-good newer-Waze music-button correction.
+        new PatchRegion(0x3f4e06,
+                "1f034228e1010103dd0701701208070107c2076407d501760187770732040100",
+                "1f03422812071502804171300b1e7c020c020701076407d51206770732040100"),
+        // Active-navigation landscape side-panel ratio: 1.0f -> 0.44921875f.
+        new PatchRegion(0x3ef930, "803f", "e63e"),
+        // Horizontal safe area, active navigation. Legacy Waze already computes navigation-bar
+        // start/end insets and has a built-in 16dp fallback, but branches to 0dp when the
+        // Android side inset is zero (as on BYD/BlueStacks with a bottom nav bar). Match the
+        // newer Waze patch: NOP those two branches so the existing 16dp minimum is retained.
+        // Real safeContent insets are still added on top, and the map itself remains edge-to-edge.
+        new PatchRegion(0x3f57e6, "3d040800", "00000000"),
+        new PatchRegion(0x3f580e, "3d050800", "00000000"),
+        // Expanded active-navigation ETA drawer: preserve the real Android bottom navigation-bar
+        // inset in landscape.  The legacy Compose wrapper reads WindowInsets.navigationBars and
+        // passes the bottom inset to EtaControlPanelView.T(int), which already applies it as the
+        // mainContainer bottom padding.  However, 5.9 explicitly branches around that calculation
+        // whenever Configuration.orientation != portrait, forcing the landscape value to zero.
+        //
+        // On the 1920x1080 / 240dpi BYD-style test layout the system bar is 90px (60dp) high.
+        // With zero padding the panel's Stop/Go row lands at y=1008..1080, completely below the
+        // usable Waze window ending at y=990.  NOP only the landscape bypass so getBottom() runs
+        // normally; the existing flexible spacer then shrinks by the real inset and lifts the row
+        // to approximately y=918..990.  Portrait behaviour and the collapsed ETA bar are untouched.
+        new PatchRegion(0x404304, "33c01800", "00000000"),
+        // Pre-drive / route-preview landscape side-panel ratio: 1.0f -> 0.44921875f.
+        new PatchRegion(0x45e014, "803f", "e63e"),
+        // Horizontal safe area, general/pre-drive landscape. Same principle as the newer
+        // Waze profile: preserve Waze's own 16dp start/end fallback when Android reports no
+        // side navigation-bar inset. This moves shared overlay content (drawer/menu controls,
+        // top-right ButtonPack, report/control area, etc.) inward without shrinking the map.
+        new PatchRegion(0x45dfe4, "3d020a00", "00000000"),
+        new PatchRegion(0x45e07e, "3d020a00", "00000000"),
+        // VehicleTypePill / vehicle selector: replace the test-tag-only modifier append with
+        // 20dp Compose padding, lifting the selector clear of the BYD bottom system bar.
+        new PatchRegion(0x1bf0e4,
+                "62001305120471541ad108340c00",
+                "1504a04100007120141e48000c00"),
+        // Primary round report (+) launcher. Keep Waze's stock outer +34dp offset and tune
+        // the caller pre-offset from -34dp to -46dp. Net result is a -12dp lift (~18px at
+        // 240dpi): exactly halfway between pass2f's slightly-too-high -16dp position and
+        // pass2i's too-low -8dp position. Speedometer and vehicle-selector patches are unchanged.
+        new PatchRegion(0x18d5a2, "1300deff", "1300d2ff"),
+        // Legacy permission / intermediate activity path: portrait -> sensor-landscape.
+        new PatchRegion(0x36e6f0, "1214", "1264")
+};
+
+private static final PatchRegion[] LEGACY_CLASSES6_PATCHES = new PatchRegion[] {
+        // Report-menu bottom clearance. Keep the report Compose structure completely stock and
+        // only increase its existing SubmenuButtons outer padding from 16dp to 64dp. The earlier
+        // modifier/branch rewrites crashed when the report UI was first opened; this is only a
+        // same-size const/16 value change, so ART verification/control flow are untouched.
+        // At 240dpi the extra 48dp adds ~72px of clearance, putting the blue action button above
+        // the persistent ~60dp/90px BYD navigation bar with a small margin.
+        new PatchRegion(0x1f1318, "13081000", "13084000"),
+        // Report-menu stability: leave the internal Waze 5.9 report Compose layout stock.
+        //
+        // The previous -56dp SubmenuButtons rewrite and forced ItemsGrid branch are deliberately
+        // removed. Those methods are first loaded/verified when the yellow report (+) button is
+        // opened, which matches the observed immediate crash. The primary report launcher remains
+        // raised by the separate classes5 patch above. Once the stock report menu is confirmed
+        // stable, its bottom controls can be cleared using a safer system-inset-based patch.
+        // StartState bottom-sheet anchors use an 80dp collapsed peek in the legacy build.
+        // Reduce both anchor constructors to 60dp so the collapsed shelf sits lower and more
+        // closely matches the BYD-height system navigation bar.
+        new PatchRegion(0x222030, "13025000", "13023c00"),
+        new PatchRegion(0x222080, "13025000", "13023c00"),
+        // UidFragmentActivity computes an orientation from the current device state. Force the
+        // computed result to SENSOR_LANDSCAPE before it is applied.
+        new PatchRegion(0x2909c0, "6e10137802000a02", "1262000000000000"),
+        // Another legacy helper requests portrait; keep it sensor-landscape.
+        new PatchRegion(0x356928, "1211", "1261")
+};
+
+private static final PatchRegion[] LEGACY_CLASSES7_PATCHES = new PatchRegion[0];
+
 private static final PatchProfile STABLE_PROFILE = new PatchProfile(
         BuildConfigData.WAZE_SUPPORTED_VERSION,
         STABLE_CLASSES5_PATCHES, STABLE_CLASSES6_PATCHES, STABLE_CLASSES7_PATCHES);
@@ -295,6 +527,10 @@ private static final PatchProfile STABLE_PROFILE = new PatchProfile(
 private static final PatchProfile BETA_PROFILE = new PatchProfile(
         BETA_PROFILE_VERSION,
         BETA_CLASSES5_PATCHES, BETA_CLASSES6_PATCHES, BETA_CLASSES7_PATCHES);
+
+private static final PatchProfile LEGACY_PROFILE = new PatchProfile(
+        BuildConfigData.WAZE59_SUPPORTED_VERSION,
+        LEGACY_CLASSES5_PATCHES, LEGACY_CLASSES6_PATCHES, LEGACY_CLASSES7_PATCHES);
 
 
     private WazePatchEngine() {}
@@ -311,13 +547,6 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                 String name = en.nextElement().getName();
                 if (isApkEntry(name)) apkNames.add(name);
             }
-            for (String required : REQUIRED_SPLITS) {
-                if (!apkNames.contains(required)) {
-                    return Validation.fail("Waze bundle variant is not compatible with this profile: missing " + required
-                            + ". Use the Android 10+ · arm64-v8a · 480-640dpi APKM variant.");
-                }
-            }
-
             ManifestInfo manifest = readBaseManifest(zip, base);
             if (!BuildConfigData.WAZE_PACKAGE.equals(manifest.packageName)) {
                 return Validation.fail("Selected APKM is not Waze. Package: "
@@ -327,15 +556,30 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                 return Validation.fail("Could not read the Waze version from base.apk.");
             }
 
+            Set<String> requiredSplits = BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(manifest.versionName)
+                    ? WAZE59_REQUIRED_SPLITS : WAZE24_REQUIRED_SPLITS;
+            for (String required : requiredSplits) {
+                if (!apkNames.contains(required)) {
+                    String variant = BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(manifest.versionName)
+                            ? "the 2-architecture Waze 5.9.5.4 APKM"
+                            : "the Android 10+ · arm64-v8a · 480-640dpi APKM variant";
+                    return Validation.fail("Waze bundle variant is not compatible with this profile: missing "
+                            + required + ". Use " + variant + ".");
+                }
+            }
+
             String baseHash;
             try (InputStream in = zip.getInputStream(base)) { baseHash = sha256(in); }
 
             boolean tested = BuildConfigData.WAZE_SUPPORTED_VERSION.equals(manifest.versionName)
                     && BuildConfigData.WAZE_SUPPORTED_VERSION_CODE == manifest.versionCode
                     && BuildConfigData.WAZE_BASE_SHA256.equalsIgnoreCase(baseHash);
+            boolean legacyExact = BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(manifest.versionName)
+                    && BuildConfigData.WAZE59_SUPPORTED_VERSION_CODE == manifest.versionCode
+                    && BuildConfigData.WAZE59_BASE_SHA256.equalsIgnoreCase(baseHash);
 
             PatchProfile profile = chooseProfile(manifest.versionName);
-            boolean exactKnownProfile = tested
+            boolean exactKnownProfile = tested || legacyExact
                     || (BETA_PROFILE_VERSION.equals(manifest.versionName)
                     && BETA_PROFILE_VERSION_CODE == manifest.versionCode
                     && BETA_PROFILE_SHA256.equalsIgnoreCase(baseHash));
@@ -345,6 +589,9 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                 detail = "TESTED · Waze " + manifest.versionName
                         + " · patch profile " + profile.version
                         + " · " + apkNames.size() + " APK splits";
+            } else if (legacyExact) {
+                detail = "LEGACY PROFILE · Waze " + manifest.versionName
+                        + " · exact binary match · " + apkNames.size() + " APK splits";
             } else if (exactKnownProfile) {
                 detail = "UNTESTED · Waze " + manifest.versionName
                         + " · exact binary profile " + profile.version
@@ -448,19 +695,30 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
      * Extracts the APKM, patches base.apk, and signs base + every split with the Manager key.
      * The returned files are ready for one PackageInstaller split-APK session.
      */
-    static List<File> buildSignedBundle(File sourceApkm, File outputDir, boolean allowForceFallback,
-                                        boolean enableEvFeatures, boolean removeMicrophoneButton, Progress progress) throws Exception {
+    static List<File> buildSignedBundle(Context context, File sourceApkm, File outputDir, boolean allowForceFallback,
+                                        boolean disableAudioPlayerControls, boolean enableEvFeatures,
+                                        boolean removeMicrophoneButton, boolean enableDebugLogging,
+                                        Progress progress) throws Exception {
         Validation validation = validateSource(sourceApkm);
         if (!validation.ok) throw new IllegalArgumentException(validation.detail);
-        if (enableEvFeatures && !validation.tested) {
-            throw new IllegalArgumentException("Enable EV features + CCS2 requires the exact tested Waze "
-                    + BuildConfigData.WAZE_SUPPORTED_VERSION + " APKM bundle.");
-        }
         PatchProfile profile = chooseProfile(validation.versionName);
-        if (!validation.tested) {
+        if (enableEvFeatures && profile != STABLE_PROFILE && profile != LEGACY_PROFILE) {
+            throw new IllegalArgumentException("Enable EV features + CCS2 is currently available only for Waze "
+                    + BuildConfigData.WAZE_SUPPORTED_VERSION + " and Waze "
+                    + BuildConfigData.WAZE59_SUPPORTED_VERSION + ".");
+        }
+        if (enableDebugLogging && profile != STABLE_PROFILE && profile != LEGACY_PROFILE) {
+            throw new IllegalArgumentException("Five-minute debug logging is currently available only for Waze "
+                    + BuildConfigData.WAZE_SUPPORTED_VERSION + " and Waze "
+                    + BuildConfigData.WAZE59_SUPPORTED_VERSION + ".");
+        }
+        if (!validation.exactPatchProfile) {
             progress.onProgress("Compatibility mode · Waze " + validation.displayVersion()
                     + " using patch profile " + profile.version
                     + (allowForceFallback ? " · force fallback enabled…" : "…"));
+        } else if (profile == LEGACY_PROFILE) {
+            progress.onProgress("Waze " + BuildConfigData.WAZE59_SUPPORTED_VERSION
+                    + " legacy profile · exact binary match…");
         }
         if (outputDir.exists()) deleteTree(outputDir);
         if (!outputDir.mkdirs()) throw new IOException("Cannot create Waze build directory");
@@ -496,16 +754,29 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
 
                 File unsignedInput = raw;
                 File patchedBase = null;
+                File debugBase = null;
                 if ("base.apk".equals(name)) {
-                    String patchMessage = enableEvFeatures
-                            ? "Patching Waze wide-screen layout, top-control clearance, and EV + CCS2 defaults"
-                            : "Patching Waze wide-screen layout + top-control clearance";
+                    String patchMessage;
+                    if (profile == LEGACY_PROFILE) {
+                        patchMessage = "Patching Waze 5.9 BYD wide-screen layout";
+                    } else {
+                        patchMessage = "Patching Waze BYD wide-screen layout + top-control clearance";
+                    }
+                    if (disableAudioPlayerControls) patchMessage += ", disabling audio player controls";
                     if (removeMicrophoneButton) patchMessage += ", removing unsupported microphone button";
+                    if (enableEvFeatures) patchMessage += ", EV + CCS2 defaults";
+                    if (enableDebugLogging) patchMessage += ", five-minute startup logging";
                     progress.onProgress(patchMessage + "…");
                     patchedBase = new File(stage, "base.patched.apk");
-                    patchBaseApk(raw, patchedBase, profile, allowForceFallback && !validation.tested,
-                            enableEvFeatures, removeMicrophoneButton, progress);
+                    patchBaseApk(raw, patchedBase, profile, allowForceFallback && !validation.exactPatchProfile,
+                            disableAudioPlayerControls, enableEvFeatures, removeMicrophoneButton, progress);
                     unsignedInput = patchedBase;
+                    if (enableDebugLogging) {
+                        progress.onProgress("Injecting five-minute Waze startup logger into the patched base APK…");
+                        debugBase = new File(stage, "base.debug.apk");
+                        WazeDebugLoggerInjector.inject(context, patchedBase, debugBase);
+                        unsignedInput = debugBase;
+                    }
                 }
 
                 progress.onProgress("Signing Waze APK " + index + "/" + names.size() + " · " + safeName);
@@ -515,6 +786,7 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
 
                 if (!raw.delete()) raw.deleteOnExit();
                 if (patchedBase != null && !patchedBase.delete()) patchedBase.deleteOnExit();
+                if (debugBase != null && !debugBase.delete()) debugBase.deleteOnExit();
             }
             deleteTree(stage);
             progress.onProgress("Waze base + all " + (names.size() - 1) + " splits signed with one local certificate.");
@@ -528,18 +800,35 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
      * and native libraries are expected to remain aligned for mmap/direct loading.
      */
     private static void patchBaseApk(File input, File output, PatchProfile profile, boolean allowForceFallback,
-                                     boolean enableEvFeatures, boolean removeMicrophoneButton, Progress progress) throws Exception {
+                                     boolean disableAudioPlayerControls, boolean enableEvFeatures,
+                                     boolean removeMicrophoneButton, Progress progress) throws Exception {
         try (InputStream in = new BufferedInputStream(new FileInputStream(input));
              OutputStream out = new BufferedOutputStream(new FileOutputStream(output))) {
             IoUtil.copy(in, out);
         }
 
+        boolean patchLegacyLandscape = profile == LEGACY_PROFILE;
+        boolean patched3 = !patchLegacyLandscape, patched4 = !patchLegacyLandscape;
         boolean patched5 = false, patched6 = false, patched7 = false;
         boolean microphonePatched = !removeMicrophoneButton;
-        PatchRegion[] classes6Regions = enableEvFeatures
-                ? concatRegions(profile.classes6, STABLE_EV_CLASSES6_PATCHES)
-                : profile.classes6;
-        int patchRegionCount = profile.classes5.length + classes6Regions.length + profile.classes7.length;
+        PatchRegion[] classes3Regions = patchLegacyLandscape ? LEGACY_CLASSES3_PATCHES : new PatchRegion[0];
+        PatchRegion[] classes4Regions;
+        PatchRegion[] classes5Regions = profile.classes5;
+        PatchRegion[] classes6Regions = profile.classes6;
+        if (patchLegacyLandscape) {
+            classes4Regions = LEGACY_CLASSES4_PATCHES;
+            if (disableAudioPlayerControls) classes4Regions = concatRegions(classes4Regions, LEGACY_AUDIO_CLASSES4_PATCHES);
+            if (enableEvFeatures) classes4Regions = concatRegions(classes4Regions, LEGACY_EV_CLASSES4_PATCHES);
+            if (disableAudioPlayerControls) classes5Regions = concatRegions(classes5Regions, LEGACY_AUDIO_CLASSES5_PATCHES);
+        } else {
+            classes4Regions = new PatchRegion[0];
+            if (profile == STABLE_PROFILE) {
+                if (disableAudioPlayerControls) classes6Regions = concatRegions(classes6Regions, STABLE_AUDIO_CLASSES6_PATCHES);
+                if (enableEvFeatures) classes6Regions = concatRegions(classes6Regions, STABLE_EV_CLASSES6_PATCHES);
+            }
+        }
+        int patchRegionCount = classes3Regions.length + classes4Regions.length
+                + classes5Regions.length + classes6Regions.length + profile.classes7.length;
         PatchState patchState = new PatchState(patchRegionCount);
         progress.onProgress("Locating " + patchRegionCount + " Waze patch signatures…");
         try (RandomAccessFile raf = new RandomAccessFile(output, "rw")) {
@@ -567,7 +856,8 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                 raf.readFully(nameBytes);
                 String name = new String(nameBytes, java.nio.charset.StandardCharsets.UTF_8);
 
-                if ("classes5.dex".equals(name) || "classes6.dex".equals(name) || "classes7.dex".equals(name)) {
+                if ((patchLegacyLandscape && ("classes3.dex".equals(name) || "classes4.dex".equals(name)))
+                        || "classes5.dex".equals(name) || "classes6.dex".equals(name) || "classes7.dex".equals(name)) {
                     if (method != ZipEntry.STORED || compressedSize != uncompressedSize || uncompressedSize > Integer.MAX_VALUE) {
                         throw new IOException(name + " is not a supported stored DEX entry");
                     }
@@ -582,17 +872,27 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                     raf.readFully(data);
 
                     PatchRegion[] regions;
-                    if ("classes5.dex".equals(name)) {
-                        regions = profile.classes5;
+                    if ("classes3.dex".equals(name)) {
+                        regions = classes3Regions;
+                    } else if ("classes4.dex".equals(name)) {
+                        regions = classes4Regions;
+                    } else if ("classes5.dex".equals(name)) {
+                        regions = classes5Regions;
                     } else if ("classes6.dex".equals(name)) {
                         regions = classes6Regions;
                     } else {
                         regions = profile.classes7;
                     }
                     data = applyRegions(data, regions, name, patchState, allowForceFallback, progress);
-                    if ("classes6.dex".equals(name) && removeMicrophoneButton) {
+                    if (removeMicrophoneButton && patchLegacyLandscape && "classes4.dex".equals(name)) {
+                        data = removeUnsupportedMicrophoneButtonLegacy59(data, progress);
+                        microphonePatched = true;
+                    } else if (removeMicrophoneButton && !patchLegacyLandscape && "classes6.dex".equals(name)) {
                         data = removeUnsupportedMicrophoneButton(data, progress);
                         microphonePatched = true;
+                    }
+                    if ("classes7.dex".equals(name) && STABLE_PROFILE.version.equals(profile.version)) {
+                        data = addReportMenuBottomClearance(data, progress);
                     }
                     data = DexUtil.repair(data);
                     CRC32 crc = new CRC32();
@@ -606,7 +906,11 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                     raf.seek(pos + 16);
                     writeU32LE(raf, newCrc);
 
-                    if ("classes5.dex".equals(name)) {
+                    if ("classes3.dex".equals(name)) {
+                        patched3 = true;
+                    } else if ("classes4.dex".equals(name)) {
+                        patched4 = true;
+                    } else if ("classes5.dex".equals(name)) {
                         patched5 = true;
                     } else if ("classes6.dex".equals(name)) {
                         patched6 = true;
@@ -617,7 +921,9 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                 pos += 46L + nameLen + extraLen + commentLen;
             }
         }
-        if (!patched5 || !patched6 || !patched7) throw new IOException("Expected Waze DEX files were not found.");
+        if (!patched3 || !patched4 || !patched5 || !patched6 || !patched7) {
+            throw new IOException("Expected Waze DEX files were not found.");
+        }
         if (!microphonePatched) throw new IllegalArgumentException("Waze microphone button removal was requested but no patch was applied.");
         if (patchState.recognised + patchState.forced != patchState.total) {
             throw new IllegalArgumentException("Compatibility patch failed: applied "
@@ -633,10 +939,273 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
 
         // Let ZipFile verify the central-directory CRCs before the APK is handed to apksig.
         try (ZipFile verify = new ZipFile(output)) {
+            if (patchLegacyLandscape) {
+                verifyEntry(verify, "classes3.dex");
+                verifyEntry(verify, "classes4.dex");
+            }
             verifyEntry(verify, "classes5.dex");
             verifyEntry(verify, "classes6.dex");
             verifyEntry(verify, "classes7.dex");
         }
+    }
+
+    /**
+     * Moves the actual Report Menu action-button row above BYD's persistent Android navigation bar.
+     *
+     * The first v2.1 attempt increased the Spacer after SubmenuButtons from 8dp to 64dp. A real
+     * head-unit test showed that this does not move the rendered/clickable button row on this Waze
+     * layout; the extra space is simply laid out below it and remains inside the area covered by the
+     * system bar.
+     *
+     * Patch the SubmenuButtons Row itself instead. Stock Waze builds its Row modifier as:
+     *   fillMaxWidth() -> wrapContentHeight() -> padding(16dp)
+     *
+     * We keep the stock 8dp spacing between the buttons, reuse that already-loaded 8dp value as a
+     * small outer padding, drop the redundant wrapContentHeight(), then add offset(y = -56dp).
+     * Modifier.offset changes the placed position (and therefore the hit target) of the Row, so the
+     * visible/clickable action buttons move above the BYD navigation overlay instead of merely adding
+     * unused space after them. The 56dp shift corresponds to the ~84px BYD navigation bar at 240dpi.
+     *
+     * This is deliberately located from the SubmenuButtons Kotlin trace and verified against the
+     * exact Compose modifier sequence before any bytes are changed.
+     */
+    private static byte[] addReportMenuBottomClearance(byte[] input, Progress progress) {
+        final String tracePrefix =
+                "com.waze.ui.reports.SubmenuButtons (ReportsMenuLayout.kt:605)";
+        int traceStringIndex = dexFindUniqueStringIndexContaining(input, tracePrefix,
+                "Waze report submenu buttons");
+        int codeStart = dexFindUniqueCodeStartUsingString(input, traceStringIndex,
+                "Waze report submenu buttons");
+        if (codeStart < 16 || codeStart >= input.length) {
+            throw new IllegalArgumentException("Waze SubmenuButtons code item was not found in classes7.dex.");
+        }
+        long codeEndLong = (long) codeStart + (long) dexU32(input, codeStart - 4) * 2L;
+        if (codeEndLong > input.length) {
+            throw new IllegalArgumentException("Invalid Waze SubmenuButtons instruction range in classes7.dex.");
+        }
+        int codeEnd = (int) codeEndLong;
+
+        int spacedByMethod = dexFindMethodIndex(input,
+                "Landroidx/compose/foundation/layout/Arrangement;", "spacedBy-0680j_4",
+                "Landroidx/compose/foundation/layout/Arrangement$HorizontalOrVertical;", "F");
+        int fillMaxWidthMethod = dexFindMethodIndex(input,
+                "Landroidx/compose/foundation/layout/SizeKt;", "fillMaxWidth$default",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "F", "I", "Ljava/lang/Object;");
+        int wrapContentHeightMethod = dexFindMethodIndex(input,
+                "Landroidx/compose/foundation/layout/SizeKt;", "wrapContentHeight$default",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "Landroidx/compose/ui/Alignment$Vertical;",
+                "Z", "I", "Ljava/lang/Object;");
+        int paddingMethod = dexFindMethodIndex(input,
+                "Landroidx/compose/foundation/layout/PaddingKt;", "padding-3ABfNKs",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "F");
+        int offsetMethod = dexFindMethodIndex(input,
+                "Landroidx/compose/foundation/layout/OffsetKt;", "offset-VpY3zN4",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "F", "F");
+
+        // Stock 5.24.0.1 sequence is 54 bytes starting at the 8dp Arrangement.spacedBy constant.
+        // Registers are also checked because the same-length replacement intentionally borrows v10
+        // (8dp) for padding and v14 as a short-lived Modifier scratch register.
+        int sequence = -1;
+        for (int p = codeStart; p + 72 <= codeEnd; p += 2) {
+            if ((input[p] & 0xff) != 0x15 || (input[p + 1] & 0xff) != 0x0a
+                    || dexU16(input, p + 2) != 0x4100) continue; // const/high16 v10, 8.0f
+            if ((input[p + 4] & 0xff) != 0x6e || dexU16(input, p + 6) != spacedByMethod
+                    || dexU16(input, p + 8) != 0x00a1) continue; // {v1,v10}
+            if (dexU16(input, p + 10) != 0x010c) continue;       // move-result-object v1
+            if (dexU16(input, p + 12) != 0x0a62) continue;       // sget-object v10, Modifier.Companion
+            if (dexU16(input, p + 16) != 0x0a1f) continue;       // check-cast v10, Modifier
+            if (dexU16(input, p + 20) != 0x0c12                 // const/4 v12, 0
+                    || dexU16(input, p + 22) != 0x0f12) continue; // const/4 v15, 0
+            if (dexU16(input, p + 24) != 0x4071
+                    || dexU16(input, p + 26) != fillMaxWidthMethod
+                    || dexU16(input, p + 28) != 0xf4ca
+                    || dexU16(input, p + 30) != 0x040c) continue;
+            if (dexU16(input, p + 32) != 0x3a12) continue;       // const/4 v10, 3
+            if (dexU16(input, p + 34) != 0x5f71
+                    || dexU16(input, p + 36) != wrapContentHeightMethod
+                    || dexU16(input, p + 38) != 0xabf4
+                    || dexU16(input, p + 40) != 0x040c) continue;
+            if (dexU16(input, p + 42) != 0x0c15
+                    || dexU16(input, p + 44) != 0x4180) continue; // const/high16 v12, 16.0f
+            if (dexU16(input, p + 46) != 0x2071
+                    || dexU16(input, p + 48) != paddingMethod
+                    || dexU16(input, p + 50) != 0x00c4
+                    || dexU16(input, p + 52) != 0x040c) continue;
+            // v14 is not consumed by the remaining modifier setup and is overwritten before the
+            // Row measure-policy call, making it a safe temporary Modifier register above.
+            if (dexU16(input, p + 54) != 0x011f
+                    || dexU16(input, p + 58) != 0x0c62
+                    || dexU16(input, p + 62) != 0x106e
+                    || dexU16(input, p + 68) != 0x0c0c
+                    || dexU16(input, p + 70) != 0x6e12) continue;
+            if (sequence >= 0) {
+                throw new IllegalArgumentException("Waze SubmenuButtons modifier sequence is ambiguous in classes7.dex.");
+            }
+            sequence = p;
+        }
+        if (sequence < 0) {
+            throw new IllegalArgumentException("Waze SubmenuButtons stock modifier sequence was not found in classes7.dex.");
+        }
+
+        byte[] out = input.clone();
+
+        // Preserve v10=8dp after Arrangement.spacedBy by loading Modifier.Companion into dead v14.
+        putU16LE(out, sequence + 12, 0x0e62);  // sget-object v14, same field
+        putU16LE(out, sequence + 16, 0x0e1f);  // check-cast v14, same Modifier type
+        putU16LE(out, sequence + 28, 0xf4ce);  // fillMaxWidth first arg v14 (was v10)
+
+        // Replace wrapContentHeight() with padding(8dp), using the original spacing value in v10.
+        putU16LE(out, sequence + 32, 0x0000);  // nop (old default-mask const/4)
+        putU16LE(out, sequence + 34, 0x2071);  // invoke-static, 2 args
+        putU16LE(out, sequence + 36, paddingMethod);
+        putU16LE(out, sequence + 38, 0x00a4);  // {v4, v10}
+        // sequence + 40 remains move-result-object v4
+
+        // Replace the old padding(16dp) call with offset(x=0dp, y=-56dp).
+        putU16LE(out, sequence + 42, 0x0a15);  // const/high16 v10, ...
+        putU16LE(out, sequence + 44, 0xc260);  // -56.0f
+        putU16LE(out, sequence + 46, 0x3071);  // invoke-static, 3 args
+        putU16LE(out, sequence + 48, offsetMethod);
+        putU16LE(out, sequence + 50, 0x0ac4);  // {v4, v12(0dp), v10(-56dp)}
+        // sequence + 52 remains move-result-object v4
+
+        /*
+         * Sparse report submenus (Animal / Traffic / Crash) pass wrapContent=true to ItemsGrid.
+         * Stock Waze therefore lets a one-row grid consume only its intrinsic height and places
+         * SubmenuButtons immediately after it. Once the button row is moved upward for BYD's
+         * navigation bar, that stock behaviour makes the buttons overlap the item labels.
+         *
+         * Full report submenus (for example Hazard / Police) use the other branch: the grid gets
+         * ColumnScope.weight(1f), so the choices stay at the top while the action row is anchored
+         * at the bottom of the available sheet. Force the sparse submenus through that same branch.
+         * This keeps all report types visually consistent and gives the shifted buttons their own
+         * space instead of drawing them over the choices.
+         */
+        final String itemsTracePrefix =
+                "com.waze.ui.reports.ItemsGrid (ReportsMenuLayout.kt:571)";
+        int itemsTraceStringIndex = dexFindUniqueStringIndexContaining(out, itemsTracePrefix,
+                "Waze report items grid");
+        int itemsCodeStart = dexFindUniqueCodeStartUsingString(out, itemsTraceStringIndex,
+                "Waze report items grid");
+        if (itemsCodeStart < 16 || itemsCodeStart >= out.length) {
+            throw new IllegalArgumentException("Waze ItemsGrid code item was not found in classes7.dex.");
+        }
+        long itemsCodeEndLong = (long) itemsCodeStart + (long) dexU32(out, itemsCodeStart - 4) * 2L;
+        if (itemsCodeEndLong > out.length) {
+            throw new IllegalArgumentException("Invalid Waze ItemsGrid instruction range in classes7.dex.");
+        }
+        int itemsCodeEnd = (int) itemsCodeEndLong;
+        int itemsWrapContentHeightMethod = dexFindMethodIndex(out,
+                "Landroidx/compose/foundation/layout/SizeKt;", "wrapContentHeight$default",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "Landroidx/compose/ui/Alignment$Vertical;",
+                "Z", "I", "Ljava/lang/Object;");
+
+        int sparseBranch = -1;
+        for (int invoke = itemsCodeStart; invoke + 6 <= itemsCodeEnd; invoke += 2) {
+            if ((out[invoke] & 0xff) != 0x71
+                    || dexU16(out, invoke + 2) != itemsWrapContentHeightMethod) continue;
+
+            // Stock sequence immediately before wrapContentHeight$default:
+            //   if-eqz v7, weightedGrid
+            //   sget-object / move-object / check-cast
+            //   invoke-static wrapContentHeight$default
+            int branch = invoke - 16;
+            if (branch < itemsCodeStart
+                    || dexU16(out, branch) != 0x0738) continue; // if-eqz v7, +offset
+            int target = branch + (short) dexU16(out, branch + 2) * 2;
+            if (target <= invoke || target >= itemsCodeEnd) continue;
+            if (sparseBranch >= 0) {
+                throw new IllegalArgumentException("Waze ItemsGrid wrap-content branch is ambiguous in classes7.dex.");
+            }
+            sparseBranch = branch;
+        }
+        if (sparseBranch < 0) {
+            throw new IllegalArgumentException("Waze ItemsGrid wrap-content branch was not found in classes7.dex.");
+        }
+
+        // Same 4-byte instruction size: if-eqz v7,target -> goto/16 target.
+        // Keep the existing signed 16-bit branch offset in the following code unit.
+        putU16LE(out, sparseBranch, 0x0029);
+
+        progress.onProgress("Moved Waze report action buttons 56dp above the bottom system bar and "
+                + "bottom-anchored sparse report layouts (buttons at 0x" + Integer.toHexString(sequence)
+                + ", ItemsGrid branch at 0x" + Integer.toHexString(sparseBranch) + ").");
+        return out;
+    }
+
+    /**
+     * Waze 5.9 microphone removal. The older SearchField implementation renders its trailing
+     * action in Trailing(SearchField.kt). With an empty query it conditionally enters a microphone
+     * IconButton group; with a non-empty query it follows a separate clear-button branch.
+     * Redirect only that microphone branch to the existing no-action group.
+     */
+    private static byte[] removeUnsupportedMicrophoneButtonLegacy59(byte[] input, Progress progress) {
+        final String tracePrefix =
+                "com.waze.design_components_compose.components.Trailing (SearchField.kt:";
+        int traceStringIndex = dexFindUniqueStringIndexContaining(input, tracePrefix,
+                "Waze 5.9 SearchField trailing action");
+        int codeStart = dexFindUniqueCodeStartUsingString(input, traceStringIndex,
+                "Waze 5.9 SearchField trailing action");
+        if (codeStart < 16 || codeStart >= input.length) {
+            throw new IllegalArgumentException("Waze 5.9 SearchField Trailing code item was not found in classes4.dex.");
+        }
+        long codeEndLong = (long) codeStart + (long) dexU32(input, codeStart - 4) * 2L;
+        if (codeEndLong > input.length) {
+            throw new IllegalArgumentException("Invalid Waze 5.9 SearchField Trailing instruction range in classes4.dex.");
+        }
+        int codeEnd = (int) codeEndLong;
+
+        int traceUse = -1;
+        for (int p = codeStart; p + 4 <= codeEnd; p += 2) {
+            int opcode = input[p] & 0xff;
+            boolean hit = opcode == 0x1a && dexU16(input, p + 2) == traceStringIndex;
+            if (!hit && opcode == 0x1b && p + 6 <= codeEnd) hit = dexU32(input, p + 2) == traceStringIndex;
+            if (!hit) continue;
+            if (traceUse >= 0) throw new IllegalArgumentException("Waze 5.9 SearchField trace use is ambiguous.");
+            traceUse = p;
+        }
+        if (traceUse < 0) throw new IllegalArgumentException("Waze 5.9 SearchField trace use was not found.");
+
+        int nonEmptyBranch = -1;
+        int clearButtonStart = -1;
+        int searchEnd = Math.min(codeEnd, traceUse + 0x40);
+        for (int p = traceUse + 4; p + 4 <= searchEnd; p += 2) {
+            if ((input[p] & 0xff) != 0x39) continue; // if-nez: non-empty query -> clear button
+            int target = p + (short) dexU16(input, p + 2) * 2;
+            if (target <= p || target >= codeEnd) continue;
+            nonEmptyBranch = p;
+            clearButtonStart = target;
+            break;
+        }
+        if (nonEmptyBranch < 0) {
+            throw new IllegalArgumentException("Waze 5.9 SearchField non-empty/clear-button branch was not found.");
+        }
+
+        int micPresenceBranch = -1;
+        for (int p = nonEmptyBranch + 4; p + 4 <= clearButtonStart; p += 2) {
+            if ((input[p] & 0xff) != 0x38) continue; // if-eqz skips microphone IconButton group
+            int target = p + (short) dexU16(input, p + 2) * 2;
+            if (target <= p || target > clearButtonStart) continue;
+            if (micPresenceBranch >= 0) {
+                throw new IllegalArgumentException("Waze 5.9 microphone presence branch is ambiguous.");
+            }
+            micPresenceBranch = p;
+        }
+        if (micPresenceBranch < 0) {
+            throw new IllegalArgumentException("Waze 5.9 microphone presence branch was not found.");
+        }
+
+        byte[] out = input.clone();
+        // if-eqz vAA,target -> goto/16 target. Same 4-byte size; keep the existing target word.
+        putU16LE(out, micPresenceBranch, 0x0029);
+        progress.onProgress("Removed unsupported Waze 5.9 search microphone (branch at 0x"
+                + Integer.toHexString(micPresenceBranch) + ").");
+        return out;
     }
 
     /**
@@ -736,6 +1305,10 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
     }
 
     private static int dexFindUniqueStringIndexContaining(byte[] dex, String needle) {
+        return dexFindUniqueStringIndexContaining(dex, needle, "Waze SearchFieldIdleAction");
+    }
+
+    private static int dexFindUniqueStringIndexContaining(byte[] dex, String needle, String label) {
         int size = dexU32(dex, 0x38);
         int off = dexU32(dex, 0x3c);
         int found = -1;
@@ -744,17 +1317,21 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
             String value = dexReadString(dex, dataOff);
             if (!value.contains(needle)) continue;
             if (found >= 0) {
-                throw new IllegalArgumentException("Waze SearchFieldIdleAction trace string is ambiguous in classes6.dex.");
+                throw new IllegalArgumentException(label + " trace string is ambiguous.");
             }
             found = i;
         }
         if (found < 0) {
-            throw new IllegalArgumentException("Waze SearchFieldIdleAction trace string is missing from classes6.dex.");
+            throw new IllegalArgumentException(label + " trace string is missing.");
         }
         return found;
     }
 
     private static int dexFindUniqueCodeStartUsingString(byte[] dex, int stringIndex) {
+        return dexFindUniqueCodeStartUsingString(dex, stringIndex, "Waze SearchFieldIdleAction");
+    }
+
+    private static int dexFindUniqueCodeStartUsingString(byte[] dex, int stringIndex, String label) {
         int classDefsSize = dexU32(dex, 0x60);
         int classDefsOff = dexU32(dex, 0x64);
         int found = -1;
@@ -784,19 +1361,19 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
                     int codeOff = dexReadUleb128(dex, cursor);
                     if (codeOff == 0) continue;
                     if (codeOff < 0 || codeOff + 16 > dex.length) {
-                        throw new IllegalArgumentException("Invalid Waze DEX code item while locating SearchFieldIdleAction.");
+                        throw new IllegalArgumentException("Invalid Waze DEX code item while locating " + label + ".");
                     }
                     int insnsSize = dexU32(dex, codeOff + 12);
                     long codeStartLong = (long) codeOff + 16L;
                     long codeEndLong = codeStartLong + (long) insnsSize * 2L;
                     if (codeStartLong < 0 || codeEndLong > dex.length) {
-                        throw new IllegalArgumentException("Invalid Waze DEX instruction range while locating SearchFieldIdleAction.");
+                        throw new IllegalArgumentException("Invalid Waze DEX instruction range while locating " + label + ".");
                     }
                     int codeStart = (int) codeStartLong;
                     int codeEnd = (int) codeEndLong;
                     if (!dexCodeUsesString(dex, codeStart, codeEnd, stringIndex)) continue;
                     if (found >= 0 && found != codeStart) {
-                        throw new IllegalArgumentException("Waze SearchFieldIdleAction code item is ambiguous in classes6.dex.");
+                        throw new IllegalArgumentException(label + " code item is ambiguous.");
                     }
                     found = codeStart;
                 }
@@ -804,7 +1381,7 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
         }
 
         if (found < 0) {
-            throw new IllegalArgumentException("Waze SearchFieldIdleAction string is not referenced by executable code in classes6.dex.");
+            throw new IllegalArgumentException(label + " string is not referenced by executable code.");
         }
         return found;
     }
@@ -1093,7 +1670,13 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
             }
 
             byte[] replacement = region.after;
-            if ("classes6.dex".equals(dexName) && regionIndex == 1 && region.after.length == 220) {
+            if ("classes5.dex".equals(dexName) && region.after.length == 16
+                    && containsWord(region.after, 0xffff)) {
+                replacement = resolveLegacyActiveNavSpeedometerOffsetRef(out, region.after);
+            } else if ("classes6.dex".equals(dexName) && region.after.length == 220
+                    && containsWord(region.after, 0xffff)) {
+                // Shared Waze 5.24 speedometer rewrite. Do not key this off regionIndex: optional
+                // audio-control patches can be inserted/removed ahead of it, changing its array index.
                 replacement = resolveSpeedometerAnchorRefs(out, region.after);
             } else if ("classes6.dex".equals(dexName) && region.after.length == 28 && region.after[0] == 0x62 && region.after[1] == 0x09
                     && containsWord(region.after, 0xffff)) {
@@ -1191,6 +1774,18 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
         putU16LE(resolved, 29 * 2, getCenterHorizontally);
         putU16LE(resolved, 34 * 2, wrapContentWidth);
         putU16LE(resolved, 42 * 2, offset);
+        return resolved;
+    }
+
+    private static byte[] resolveLegacyActiveNavSpeedometerOffsetRef(byte[] dex, byte[] template) {
+        if (template.length != 16) throw new IllegalArgumentException("Unexpected Waze 5.9 active-navigation speedometer patch size");
+        int offset = dexFindMethodIndex(dex,
+                "Landroidx/compose/foundation/layout/OffsetKt;", "offset-VpY3zN4",
+                "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/ui/Modifier;", "F", "F");
+        byte[] resolved = template.clone();
+        // invoke-static begins at byte 8; its method reference is bytes 10..11.
+        putU16LE(resolved, 10, offset);
         return resolved;
     }
 
@@ -1350,6 +1945,7 @@ private static final PatchProfile BETA_PROFILE = new PatchProfile(
     }
 
     private static PatchProfile chooseProfile(String versionName) {
+        if (BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(versionName)) return LEGACY_PROFILE;
         if (versionName != null && versionName.startsWith("5.24.4.")) return BETA_PROFILE;
         return STABLE_PROFILE;
     }

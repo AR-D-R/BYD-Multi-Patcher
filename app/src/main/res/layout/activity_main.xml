@@ -11,7 +11,8 @@
             <RadioGroup android:id="@+id/groupEngine" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
                 <RadioButton android:id="@+id/radioEngine91" android:layout_width="wrap_content" android:layout_height="wrap_content" android:checked="true" android:text="Spotify 9.1" android:textColor="@color/text_primary" />
                 <RadioButton android:id="@+id/radioEngine89" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:text="Spotify 8.9" android:textColor="@color/text_primary" />
-                <RadioButton android:id="@+id/radioEngineWaze" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:text="Waze" android:textColor="@color/text_primary" />
+                <RadioButton android:id="@+id/radioEngineWaze" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:text="Waze 5.24" android:textColor="@color/text_primary" />
+            <RadioButton android:id="@+id/radioEngineWaze59" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:text="Waze 5.9" android:textColor="@color/text_primary" />
                 <RadioButton android:id="@+id/radioEngineAbrp" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="10dp" android:text="ABRP" android:textColor="@color/text_primary" />
             </RadioGroup>
         </LinearLayout>
@@ -42,7 +43,7 @@
         <LinearLayout android:id="@+id/wazeStatusPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/card_bg" android:orientation="vertical" android:padding="12dp" android:visibility="gone">
             <TextView android:text="WAZE" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textStyle="bold" />
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/slot_bg" android:orientation="vertical" android:padding="10dp">
-                <TextView android:text="WAZE 5.24.0.1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
+                <TextView android:id="@+id/txtWazeProfileTitle" android:text="WAZE 5.24" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="@color/text_primary" android:textSize="14sp" android:textStyle="bold" />
                 <TextView android:text="Not installed" android:id="@+id/txtWazeInstalled" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:textColor="@color/text_secondary" android:textSize="13sp" />
                 <Button android:id="@+id/btnWazeInfo" android:text="APP INFO" android:layout_width="match_parent" android:layout_height="42dp" android:layout_marginTop="8dp" android:minHeight="0dp" android:textSize="10sp" />
             </LinearLayout>
@@ -87,7 +88,7 @@
                 </LinearLayout>
                 <TextView android:id="@+id/txtBrandingHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="0° keeps original Spotify colours." android:textColor="@color/text_secondary" android:textSize="11sp" />
                 <LinearLayout android:id="@+id/panel91" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="SPOTIFY 9.1 DISPLAY" android:textColor="@color/text_secondary" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="SPOTIFY 9.1" android:textColor="@color/text_secondary" android:textStyle="bold" />
                     <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchBydLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:text="Wide-screen layout fixes" android:textColor="@color/text_primary" />
                     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
                         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Interface scale" android:textColor="@color/text_secondary" />
@@ -110,7 +111,7 @@
                     <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchAutoResume" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:text="Robust resume playback after vehicle restart" android:textColor="@color/text_primary" />
                 </LinearLayout>
                 <LinearLayout android:id="@+id/panel89" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="SPOTIFY 8.9 · WIDE-SCREEN DISPLAY" android:textColor="@color/text_secondary" android:textStyle="bold" />
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="SPOTIFY 8.9" android:textColor="@color/text_secondary" android:textStyle="bold" />
                     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="Font size" android:textColor="@color/text_secondary" />
                     <RadioGroup android:id="@+id/group89Font" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
                         <RadioButton android:id="@+id/radio89FontStock" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Stock" android:textColor="@color/text_primary" />
@@ -124,15 +125,22 @@
                     </RadioGroup>
                     <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switch89PreventPortrait" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:text="Keep Spotify in landscape" android:textColor="@color/text_primary" />
                 </LinearLayout>
+                <TextView android:id="@+id/txtBydClusterTitle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="BYD INSTRUMENT CLUSTER" android:textColor="@color/text_secondary" android:textStyle="bold" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchBydClusterBridge" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:checked="true" android:text="Show current Spotify track on instrument cluster" android:textColor="@color/text_primary" />
+                <TextView android:id="@+id/txtBydClusterHint" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Spotify 8.9 and 9.1. Mirrors the current track, playback state and progress to supported BYD instrument clusters. Stock com.spotify.music stays untouched." android:textColor="@color/text_secondary" android:textSize="11sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/panelWaze" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-                <TextView android:text="WAZE · WIDE-SCREEN DISPLAY" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/text_secondary" android:textStyle="bold" />
-                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeWide" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:enabled="false" android:text="Wide-screen optimisations" android:textColor="@color/text_primary" />
-                <TextView android:text="@string/waze_widescreen_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <TextView android:id="@+id/txtWazeSettingsTitle" android:text="WAZE 5.24" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="@color/text_secondary" android:textStyle="bold" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeWide" android:layout_width="match_parent" android:layout_height="wrap_content" android:checked="true" android:enabled="false" android:text="BYD wide-screen layout" android:textColor="@color/text_primary" />
+                <TextView android:id="@+id/txtWazeWideDetails" android:text="@string/waze_widescreen_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeDisableAudio" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:checked="true" android:text="Disable audio player controls" android:textColor="@color/text_primary" />
+                <TextView android:id="@+id/txtWazeAudioDetails" android:text="@string/waze_disable_audio_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeRemoveMic" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:checked="true" android:text="Remove search microphone" android:textColor="@color/text_primary" />
+                <TextView android:id="@+id/txtWazeMicDetails" android:text="@string/waze_remove_microphone_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
                 <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeEv" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:checked="true" android:text="Enable EV features" android:textColor="@color/text_primary" />
-                <TextView android:text="Turns on Waze’s EV setting and selects CCS2, allowing compatible charging stations to be shown. Available with the exact supported Waze 5.24.0.1 source." android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
-                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeRemoveMic" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:checked="true" android:text="Remove unsupported microphone button" android:textColor="@color/text_primary" />
-                <TextView android:text="@string/waze_remove_microphone_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <TextView android:id="@+id/txtWazeEvDetails" android:text="@string/waze_ev_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchWazeDebugLogging" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:checked="false" android:text="5-minute privacy-safe debug log" android:textColor="@color/debug_red" android:textStyle="bold" />
+                <TextView android:id="@+id/txtWazeDebugDetails" android:text="@string/waze_debug_logging_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/debug_red_hint" android:textSize="12sp" />
             </LinearLayout>
             <LinearLayout android:id="@+id/panelAbrp" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="@string/abrp_display_title" android:textColor="@color/abrp_blue" android:textStyle="bold" />
@@ -146,6 +154,8 @@
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="BYD NATIVE TTS" android:textColor="@color/abrp_blue" android:textStyle="bold" />
                 <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchAbrpNativeTts" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:checked="true" android:text="Use BYD native Cerence TTS in ABRP" android:textColor="@color/text_primary" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:text="@string/abrp_native_tts_patch_description" android:textColor="@color/text_secondary" android:textSize="12sp" />
+                <com.google.android.material.switchmaterial.SwitchMaterial android:id="@+id/switchAbrpDebugLogging" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:checked="false" android:text="5-minute privacy-safe debug log" android:textColor="@color/debug_red" android:textStyle="bold" />
+                <TextView android:id="@+id/txtAbrpDebugDetails" android:text="@string/abrp_debug_logging_details" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/debug_red_hint" android:textSize="12sp" />
             </LinearLayout>
         </LinearLayout>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/progress_bg" android:orientation="vertical" android:padding="10dp">
@@ -156,6 +166,9 @@
             <ProgressBar android:id="@+id/progressBar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="8dp" android:layout_marginTop="5dp" android:max="100" android:progressBackgroundTint="@color/divider" android:progressTint="@color/brand" />
             <TextView android:id="@+id/txtProgress" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:text="Ready to patch." android:textColor="@color/text_primary" android:textSize="12sp" />
         </LinearLayout>
-        <Button android:id="@+id/btnPatchInstall" android:layout_width="match_parent" android:layout_height="54dp" android:layout_marginTop="7dp" android:backgroundTint="@color/brand" android:text="PATCH &amp; INSTALL" android:textColor="#000000" android:textStyle="bold" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:orientation="horizontal">
+            <Button android:id="@+id/btnPatchInstall" android:layout_width="0dp" android:layout_height="54dp" android:layout_weight="2" android:backgroundTint="@color/brand" android:text="PATCH &amp; INSTALL" android:textColor="#000000" android:textStyle="bold" />
+            <Button android:id="@+id/btnPatchSaveApkm" android:layout_width="0dp" android:layout_height="54dp" android:layout_marginStart="7dp" android:layout_weight="1" android:backgroundTint="@color/brand" android:text="PATCH &amp; SAVE APKM" android:textColor="#000000" android:textSize="11sp" android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -34,6 +34,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int WAZE_ACCENT_DARK = Color.rgb(25, 145, 184);
     private static final int ABRP_ACCENT = Color.rgb(197, 34, 34);
     private static final int ABRP_ACCENT_DARK = Color.rgb(143, 24, 24);
+    private static final int DEBUG_RED = Color.rgb(239, 83, 80);
+    private static final int DEBUG_RED_DARK = Color.rgb(183, 28, 28);
     private static final int CONTROL_UNCHECKED = Color.rgb(179, 179, 179);
     private static final int CONTROL_DISABLED = Color.rgb(105, 105, 105);
     private static final int SCALE_MIN_PERCENT = 100;
@@ -41,39 +43,38 @@ public class MainActivity extends AppCompatActivity {
     private static final int SCALE_STEP_PERCENT = 5;
     private static final int SCALE_DEFAULT_PERCENT = 115;
 
-    // Waze versions supported by this patcher build.
-    private static final String WAZE_STABLE_VERSION = "5.24.0.1";
-    private static final long WAZE_STABLE_VERSION_CODE = 1030729L;
-    private static final String WAZE_BETA_VERSION = "5.24.4.900";
-    private static final long WAZE_BETA_VERSION_CODE = 1030731L;
-    private static final String WAZE_SUPPORTED_VERSIONS =
-            WAZE_STABLE_VERSION + " (stable) · " + WAZE_BETA_VERSION + " (beta)";
-    private static final String WAZE_USER_DESCRIPTION =
-            "Wide-screen changes:\n"
+    // Waze profiles exposed by this patcher build. The old 5.24 beta binary profile remains
+    // inside WazePatchEngine for compatibility, but is intentionally not advertised in the UI.
+    private static final String WAZE_FEATURES_DESCRIPTION =
+            "BYD wide-screen changes:\n"
             + "• Centres the car and speedometer.\n"
             + "• Makes the navigation panel narrower to show more map.\n"
             + "• Moves top controls below thick system bars.\n"
             + "• Improves route preview and overview placement.\n"
             + "• Keeps the search drawer smaller when collapsed.\n"
-            + "• Can remove the unsupported microphone button from search.\n\n"
-            + "The EV option turns on Waze’s EV setting and selects CCS2, allowing compatible charging stations to be shown.\n\n"
-            + "Tested on BYD Android head units. It may also work on other systems with similar wide displays and top bars.\n\n"
-            + "Supported Waze versions in this build: " + WAZE_SUPPORTED_VERSIONS + ".";
+            + "• Keeps drawers and report confirmation controls above the BYD navigation bar.";
+
+    private static final String WAZE24_USER_DESCRIPTION = WAZE_FEATURES_DESCRIPTION;
+
+    private static final String WAZE59_USER_DESCRIPTION =
+            "Older Waze version — may run quicker on slower hardware.\n\n"
+            + WAZE_FEATURES_DESCRIPTION;
 
     private TextView txtOfficial, txtPrimary, txtSecondary, txtSourceStatus, txtProgress;
-    private TextView txtOptimiseHint, txtSelectedSlotTitle, txtManagerVersion, txtIconHue, txtScaleValue;
+    private TextView txtOptimiseHint, txtSelectedSlotTitle, txtManagerVersion, txtIconHue, txtScaleValue, txtBydClusterTitle, txtBydClusterHint;
     private TextView txtProgressStage, txtProgressPercent, txtSourceVersion, txtSlotsVersion, txtBrandingHint, txtWazeInstalled, txtAbrpInstalled;
+    private TextView txtWazeProfileTitle, txtWazeSettingsTitle, txtWazeWideDetails, txtWazeAudioDetails, txtWazeEvDetails, txtWazeMicDetails, txtWazeDebugDetails;
     private ProgressBar progressBar;
 
-    private RadioButton radioEngine91, radioEngine89, radioEngineWaze, radioEngineAbrp;
+    private RadioButton radioEngine91, radioEngine89, radioEngineWaze, radioEngineWaze59, radioEngineAbrp;
     private RadioButton radioPrimary, radioSecondary;
     private RadioButton radioPlayerLhs, radioPlayerRhs;
     private RadioButton radio89FontStock, radio89FontModerate, radio89FontLarge;
     private RadioButton radio89PanelLeft, radio89PanelRight;
 
     private EditText editAppName;
-    private SwitchMaterial switchOptimise, switchBydLayout, switchAutoResume, switchIconBadge, switch89PreventPortrait, switchWazeWide, switchWazeEv, switchWazeRemoveMic, switchAbrpDirectBattery, switchAbrpAutoDayNight, switchAbrpNativeTts;
-    private Button btnPatchInstall, btnPrimaryInfo, btnSecondaryInfo, btnWazeInfo, btnAbrpInfo, btnBrowse;
+    private SwitchMaterial switchOptimise, switchBydLayout, switchAutoResume, switchBydClusterBridge, switchIconBadge, switch89PreventPortrait, switchWazeWide, switchWazeDisableAudio, switchWazeEv, switchWazeRemoveMic, switchWazeDebugLogging, switchAbrpDirectBattery, switchAbrpAutoDayNight, switchAbrpNativeTts, switchAbrpDebugLogging;
+    private Button btnPatchInstall, btnPatchSaveApkm, btnPrimaryInfo, btnSecondaryInfo, btnWazeInfo, btnAbrpInfo, btnBrowse, btnApkMirror, btnDiagnostics, btnRefresh;
     private SeekBar seekIconHue, seekInterfaceScale;
     private ImageView imgIconPreview;
     private View slotPrimaryCard, slotSecondaryCard, panel91, panel89, panelWaze, panelAbrp;
@@ -85,14 +86,17 @@ public class MainActivity extends AppCompatActivity {
     private SharedPreferences prefs;
     private boolean installReceiverRegistered;
     private boolean loadingSlotUi;
+    private boolean loadingWazeUi;
     private boolean engine89;
-    private boolean engineWaze;
+    private boolean engineWaze;      // Waze 5.24
+    private boolean engineWaze59;
     private boolean engineAbrp;
     private boolean sourceValid91;
     private boolean sourceValid89;
     private boolean sourceValidWaze;
+    private boolean sourceValidWaze59;
     private boolean sourceValidAbrp;
-    private volatile WazePatchEngine.Validation wazeSourceValidation;
+    private volatile WazePatchEngine.Validation waze24SourceValidation, waze59SourceValidation;
     private File sourceApk;
 
     private final BroadcastReceiver installRefreshReceiver = new BroadcastReceiver() {
@@ -125,25 +129,46 @@ public class MainActivity extends AppCompatActivity {
                 if (uri != null) importSource(uri);
             });
 
+    private final ActivityResultLauncher<Intent> pickBuiltIn = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == FileBrowserActivity.RESULT_USE_EXTERNAL) {
+                    openExternalPicker();
+                    return;
+                }
+                if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) return;
+                String path = result.getData().getStringExtra(FileBrowserActivity.EXTRA_RESULT_PATH);
+                if (path != null && !path.isEmpty()) importSource(Uri.fromFile(new File(path)));
+            });
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         prefs = getSharedPreferences("manager_settings", MODE_PRIVATE);
         bind();
+        boolean clusterEnabled = prefs.contains("spotify_byd_cluster")
+                ? prefs.getBoolean("spotify_byd_cluster", true)
+                : prefs.getBoolean("spotify89_byd_cluster_test", true);
+        switchBydClusterBridge.setChecked(clusterEnabled);
+        switchWazeDisableAudio.setChecked(prefs.getBoolean("waze_disable_audio", true));
         switchWazeEv.setChecked(prefs.getBoolean("waze_enable_ev", true));
         switchWazeRemoveMic.setChecked(prefs.getBoolean("waze_remove_microphone", true));
+        if (switchWazeDebugLogging != null) switchWazeDebugLogging.setChecked(false);
         switchAbrpDirectBattery.setChecked(prefs.getBoolean("abrp_direct_battery", true));
         switchAbrpAutoDayNight.setChecked(prefs.getBoolean("abrp_auto_day_night_default", true));
         switchAbrpNativeTts.setChecked(prefs.getBoolean("abrp_native_tts", true));
+        if (switchAbrpDebugLogging != null) switchAbrpDebugLogging.setChecked(false);
         setupActions();
         String selectedProfile = prefs.getString("selected_engine", "91");
+        if ("waze".equals(selectedProfile)) selectedProfile = "waze24"; // migrate v2.1 preference
         engine89 = "89".equals(selectedProfile);
-        engineWaze = "waze".equals(selectedProfile);
+        engineWaze = "waze24".equals(selectedProfile);
+        engineWaze59 = "waze59".equals(selectedProfile);
         engineAbrp = "abrp".equals(selectedProfile);
         radioEngine89.setChecked(engine89);
         radioEngineWaze.setChecked(engineWaze);
+        radioEngineWaze59.setChecked(engineWaze59);
         radioEngineAbrp.setChecked(engineAbrp);
-        radioEngine91.setChecked(!engine89 && !engineWaze && !engineAbrp);
+        radioEngine91.setChecked(!engine89 && !isWazeProfile() && !engineAbrp);
         radioPrimary.setChecked(true);
         radioSecondary.setChecked(false);
         applyEngineUi(false);
@@ -158,12 +183,21 @@ public class MainActivity extends AppCompatActivity {
         txtSlotsVersion = findViewById(R.id.txtSlotsVersion);
         txtBrandingHint = findViewById(R.id.txtBrandingHint);
         txtWazeInstalled = findViewById(R.id.txtWazeInstalled);
+        txtWazeProfileTitle = findViewById(R.id.txtWazeProfileTitle);
+        txtWazeSettingsTitle = findViewById(R.id.txtWazeSettingsTitle);
+        txtWazeWideDetails = findViewById(R.id.txtWazeWideDetails);
+        txtWazeAudioDetails = findViewById(R.id.txtWazeAudioDetails);
+        txtWazeEvDetails = findViewById(R.id.txtWazeEvDetails);
+        txtWazeMicDetails = findViewById(R.id.txtWazeMicDetails);
+        txtWazeDebugDetails = findViewById(R.id.txtWazeDebugDetails);
         txtAbrpInstalled = findViewById(R.id.txtAbrpInstalled);
         txtProgress = findViewById(R.id.txtProgress);
         txtProgressStage = findViewById(R.id.txtProgressStage);
         txtProgressPercent = findViewById(R.id.txtProgressPercent);
         progressBar = findViewById(R.id.progressBar);
         txtOptimiseHint = findViewById(R.id.txtOptimiseHint);
+        txtBydClusterTitle = findViewById(R.id.txtBydClusterTitle);
+        txtBydClusterHint = findViewById(R.id.txtBydClusterHint);
         txtSelectedSlotTitle = findViewById(R.id.txtSelectedSlotTitle);
         txtManagerVersion = findViewById(R.id.txtManagerVersion);
         txtIconHue = findViewById(R.id.txtIconHue);
@@ -173,6 +207,7 @@ public class MainActivity extends AppCompatActivity {
         radioEngine91 = findViewById(R.id.radioEngine91);
         radioEngine89 = findViewById(R.id.radioEngine89);
         radioEngineWaze = findViewById(R.id.radioEngineWaze);
+        radioEngineWaze59 = findViewById(R.id.radioEngineWaze59);
         radioEngineAbrp = findViewById(R.id.radioEngineAbrp);
         radioPrimary = findViewById(R.id.radioPrimary);
         radioSecondary = findViewById(R.id.radioSecondary);
@@ -188,24 +223,32 @@ public class MainActivity extends AppCompatActivity {
         switchOptimise = findViewById(R.id.switchOptimise);
         switchBydLayout = findViewById(R.id.switchBydLayout);
         switchAutoResume = findViewById(R.id.switchAutoResume);
+        switchBydClusterBridge = findViewById(R.id.switchBydClusterBridge);
         switchIconBadge = findViewById(R.id.switchIconBadge);
         switch89PreventPortrait = findViewById(R.id.switch89PreventPortrait);
         switchWazeWide = findViewById(R.id.switchWazeWide);
+        switchWazeDisableAudio = findViewById(R.id.switchWazeDisableAudio);
         switchWazeEv = findViewById(R.id.switchWazeEv);
         switchWazeRemoveMic = findViewById(R.id.switchWazeRemoveMic);
+        switchWazeDebugLogging = findViewById(R.id.switchWazeDebugLogging);
         switchAbrpDirectBattery = findViewById(R.id.switchAbrpDirectBattery);
         switchAbrpAutoDayNight = findViewById(R.id.switchAbrpAutoDayNight);
         switchAbrpNativeTts = findViewById(R.id.switchAbrpNativeTts);
+        switchAbrpDebugLogging = findViewById(R.id.switchAbrpDebugLogging);
         seekIconHue = findViewById(R.id.seekIconHue);
         seekInterfaceScale = findViewById(R.id.seekInterfaceScale);
         imgIconPreview = findViewById(R.id.imgIconPreview);
 
         btnPatchInstall = findViewById(R.id.btnPatchInstall);
+        btnPatchSaveApkm = findViewById(R.id.btnPatchSaveApkm);
         btnPrimaryInfo = findViewById(R.id.btnPrimaryInfo);
         btnSecondaryInfo = findViewById(R.id.btnSecondaryInfo);
         btnWazeInfo = findViewById(R.id.btnWazeInfo);
         btnAbrpInfo = findViewById(R.id.btnAbrpInfo);
         btnBrowse = findViewById(R.id.btnBrowse);
+        btnApkMirror = findViewById(R.id.btnApkMirror);
+        btnDiagnostics = findViewById(R.id.btnDiagnostics);
+        btnRefresh = findViewById(R.id.btnRefresh);
         slotPrimaryCard = findViewById(R.id.slotPrimaryCard);
         slotSecondaryCard = findViewById(R.id.slotSecondaryCard);
         panel91 = findViewById(R.id.panel91);
@@ -220,21 +263,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupActions() {
-        btnBrowse.setOnClickListener(v -> {
-            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            boolean bundleProfile = true;
-            i.setType(bundleProfile ? "*/*" : "application/vnd.android.package-archive");
-            if (bundleProfile) i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/zip", "application/octet-stream", "application/vnd.android.package-archive"});
-            i.addCategory(Intent.CATEGORY_OPENABLE);
-            pickApk.launch(i);
-        });
-        findViewById(R.id.btnApkMirror).setOnClickListener(v ->
+        btnBrowse.setOnClickListener(v -> BrowseChoiceDialog.show(this, currentAccent(),
+                "Looking for " + currentSourceDescription(),
+                prefs.getString("browse_method", ""), this::openBuiltInBrowser, this::openExternalPicker));
+        btnApkMirror.setOnClickListener(v ->
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(currentApkMirrorUrl()))));
-        findViewById(R.id.btnRefresh).setOnClickListener(v -> {
+        btnRefresh.setOnClickListener(v -> {
             refreshPackages();
             validateStoredSource();
         });
-        findViewById(R.id.btnDiagnostics).setOnClickListener(v -> copyDiagnostics());
+        btnDiagnostics.setOnClickListener(v -> copyDiagnostics());
         btnPrimaryInfo.setOnClickListener(v -> openAppInfo(currentPrimaryPackage()));
         btnSecondaryInfo.setOnClickListener(v -> openAppInfo(currentSecondaryPackage()));
         btnWazeInfo.setOnClickListener(v -> openAppInfo(BuildConfigData.WAZE_PACKAGE));
@@ -245,10 +283,15 @@ public class MainActivity extends AppCompatActivity {
                 prefs.edit().putBoolean("abrp_auto_day_night_default", isChecked).apply());
         switchAbrpNativeTts.setOnCheckedChangeListener((buttonView, isChecked) ->
                 prefs.edit().putBoolean("abrp_native_tts", isChecked).apply());
+        switchBydClusterBridge.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("spotify_byd_cluster", isChecked).remove("spotify89_byd_cluster_test").apply();
+            if (!loadingSlotUi) applyClusterBridgeUi();
+        });
 
         radioEngine91.setOnClickListener(v -> switchProfile("91"));
         radioEngine89.setOnClickListener(v -> switchProfile("89"));
-        radioEngineWaze.setOnClickListener(v -> switchProfile("waze"));
+        radioEngineWaze.setOnClickListener(v -> switchProfile("waze24"));
+        radioEngineWaze59.setOnClickListener(v -> switchProfile("waze59"));
         radioEngineAbrp.setOnClickListener(v -> switchProfile("abrp"));
         radioPrimary.setOnClickListener(v -> selectSlot(true));
         radioSecondary.setOnClickListener(v -> selectSlot(false));
@@ -273,44 +316,62 @@ public class MainActivity extends AppCompatActivity {
         switchIconBadge.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!loadingSlotUi) updateIconPreview();
         });
-        switchWazeEv.setOnCheckedChangeListener((buttonView, isChecked) ->
-                prefs.edit().putBoolean("waze_enable_ev", isChecked).apply());
-        switchWazeRemoveMic.setOnCheckedChangeListener((buttonView, isChecked) ->
-                prefs.edit().putBoolean("waze_remove_microphone", isChecked).apply());
+        switchWazeDisableAudio.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!loadingWazeUi) prefs.edit().putBoolean("waze_disable_audio", isChecked).apply();
+        });
+        switchWazeEv.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!loadingWazeUi) prefs.edit().putBoolean("waze_enable_ev", isChecked).apply();
+        });
+        switchWazeRemoveMic.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!loadingWazeUi) prefs.edit().putBoolean("waze_remove_microphone", isChecked).apply();
+        });
         btnPatchInstall.setOnClickListener(v -> patchAndInstall());
+        btnPatchSaveApkm.setOnClickListener(v -> patchAndSaveApkm());
     }
 
     private void switchProfile(String profile) {
         boolean new89 = "89".equals(profile);
-        boolean newWaze = "waze".equals(profile);
+        boolean newWaze24 = "waze24".equals(profile);
+        boolean newWaze59 = "waze59".equals(profile);
         boolean newAbrp = "abrp".equals(profile);
-        if (new89 == engine89 && newWaze == engineWaze && newAbrp == engineAbrp) return;
-        if (!engineWaze && !engineAbrp) saveCurrentSlotUi();
+        if (new89 == engine89 && newWaze24 == engineWaze && newWaze59 == engineWaze59 && newAbrp == engineAbrp) return;
+        if (!isWazeProfile() && !engineAbrp) saveCurrentSlotUi();
         engine89 = new89;
-        engineWaze = newWaze;
+        engineWaze = newWaze24;
+        engineWaze59 = newWaze59;
         engineAbrp = newAbrp;
         prefs.edit().putString("selected_engine", currentProfileCode()).apply();
         radioEngine89.setChecked(engine89);
         radioEngineWaze.setChecked(engineWaze);
+        radioEngineWaze59.setChecked(engineWaze59);
         radioEngineAbrp.setChecked(engineAbrp);
-        radioEngine91.setChecked(!engine89 && !engineWaze && !engineAbrp);
+        radioEngine91.setChecked(!engine89 && !isWazeProfile() && !engineAbrp);
         applyEngineUi(true);
     }
 
+    private boolean isWazeProfile() { return engineWaze || engineWaze59; }
+
     private void applyEngineUi(boolean resetProgress) {
-        boolean spotify = !engineWaze && !engineAbrp;
+        boolean spotify = !isWazeProfile() && !engineAbrp;
         applyProfileAccent();
+        applySourceButtonUi();
         spotifySlotsPanel.setVisibility(spotify ? View.VISIBLE : View.GONE);
-        wazeStatusPanel.setVisibility(engineWaze ? View.VISIBLE : View.GONE);
+        wazeStatusPanel.setVisibility(isWazeProfile() ? View.VISIBLE : View.GONE);
         abrpStatusPanel.setVisibility(engineAbrp ? View.VISIBLE : View.GONE);
         spotifySettingsPanel.setVisibility(spotify ? View.VISIBLE : View.GONE);
-        panelWaze.setVisibility(engineWaze ? View.VISIBLE : View.GONE);
+        if (btnPatchSaveApkm != null) btnPatchSaveApkm.setVisibility(View.VISIBLE);
+        panelWaze.setVisibility(isWazeProfile() ? View.VISIBLE : View.GONE);
         panelAbrp.setVisibility(engineAbrp ? View.VISIBLE : View.GONE);
         panel91.setVisibility(spotify && !engine89 ? View.VISIBLE : View.GONE);
         panel89.setVisibility(spotify && engine89 ? View.VISIBLE : View.GONE);
 
         if (engineAbrp) {
-            txtSelectedSlotTitle.setText("ABRP Display & Location Improvements Patch");
+            // Troubleshooting mode is intentionally never persisted.
+            if (switchAbrpDebugLogging != null) {
+                switchAbrpDebugLogging.setChecked(false);
+                switchAbrpDebugLogging.setEnabled(true);
+            }
+            txtSelectedSlotTitle.setText("ABRP");
             txtSourceVersion.setText("Original ABRP " + BuildConfigData.ABRP_SUPPORTED_VERSION + " file (.apkm)");
             btnBrowse.setText("CHOOSE FILE");
             sourceApk = sourceFileForProfile("abrp");
@@ -326,21 +387,37 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (engineWaze) {
-            txtSelectedSlotTitle.setText("WAZE · WIDE-SCREEN PATCH");
-            txtSourceVersion.setText("Supported Waze: " + WAZE_SUPPORTED_VERSIONS
-                    + " · Android 10+ · arm64 · 480-640dpi APKM");
+        if (isWazeProfile()) {
+            String version = currentTargetVersion();
+            txtSelectedSlotTitle.setText(engineWaze59 ? "Waze 5.9 · Older / lighter" : "Waze 5.24");
+            txtSourceVersion.setText(engineWaze59
+                    ? "Waze 5.9.5.4 · older version — may run quicker on slower hardware · 2-architecture APKM"
+                    : "Waze 5.24.0.1 · Android 10+ · arm64 · 480-640dpi APKM");
             btnBrowse.setText("BROWSE APKM");
             if (switchWazeWide != null) { switchWazeWide.setChecked(true); switchWazeWide.setEnabled(false); }
-            sourceApk = sourceFileForProfile("waze");
+            applyWazeStaticText();
+            loadingWazeUi = true;
+            switchWazeDisableAudio.setChecked(prefs.getBoolean("waze_disable_audio", true));
+            switchWazeDisableAudio.setEnabled(true);
+            switchWazeRemoveMic.setChecked(prefs.getBoolean("waze_remove_microphone", true));
+            switchWazeRemoveMic.setEnabled(true);
+            switchWazeEv.setChecked(prefs.getBoolean("waze_enable_ev", true));
+            switchWazeEv.setEnabled(true);
+            // Deliberately never persist troubleshooting mode: every fresh selection starts safe/OFF.
+            switchWazeDebugLogging.setChecked(false);
+            switchWazeDebugLogging.setEnabled(true);
+            switchWazeDebugLogging.setVisibility(View.VISIBLE);
+            if (txtWazeDebugDetails != null) txtWazeDebugDetails.setVisibility(View.VISIBLE);
+            loadingWazeUi = false;
+            sourceApk = sourceFileForProfile(currentProfileCode());
             clearIconPreviews();
             refreshPackages();
-            if (resetProgress) showProgress(0, "READY", "Supported Waze versions: " + WAZE_SUPPORTED_VERSIONS + ".");
+            if (resetProgress) showProgress(0, "READY", "Choose Waze " + version + " and apply the BYD patch.");
             if (sourceApk.isFile()) validateStoredSource();
             else {
-                wazeSourceValidation = null;
+                setWazeValidation(currentProfileCode(), null);
                 setCurrentSourceValid(false);
-                txtSourceStatus.setText("No Waze APKM selected · supported: " + WAZE_SUPPORTED_VERSIONS);
+                txtSourceStatus.setText("No Waze " + version + " APKM selected.");
             }
             updatePatchButton();
             return;
@@ -356,6 +433,7 @@ public class MainActivity extends AppCompatActivity {
         sourceApk = sourceFileForProfile(engine89 ? "89" : "91");
         clearIconPreviews();
         selectSlot(!radioSecondary.isChecked());
+        applyClusterBridgeUi();
         refreshPackages();
         if (resetProgress) showProgress(0, "READY", "Switched to Spotify " + (engine89 ? "8.9" : "9.1") + ".");
         if (sourceApk.isFile()) validateStoredSource();
@@ -366,9 +444,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void applySourceButtonUi() {
+        if (btnApkMirror == null || btnDiagnostics == null || btnRefresh == null) return;
+        btnApkMirror.setVisibility(View.VISIBLE);
+        btnApkMirror.setText(isWazeProfile() ? "APK MIRROR" : "APK MIRROR");
+        btnDiagnostics.setText("DIAGNOSTICS");
+        btnRefresh.setText("REFRESH");
+        btnDiagnostics.setVisibility(View.VISIBLE);
+        btnRefresh.setVisibility(View.VISIBLE);
+    }
+
     private void applyProfileAccent() {
-        int accent = engineAbrp ? ABRP_ACCENT : (engineWaze ? WAZE_ACCENT : SPOTIFY_ACCENT);
-        int accentDark = engineAbrp ? ABRP_ACCENT_DARK : (engineWaze ? WAZE_ACCENT_DARK : SPOTIFY_ACCENT_DARK);
+        int accent = engineAbrp ? ABRP_ACCENT : (isWazeProfile() ? WAZE_ACCENT : SPOTIFY_ACCENT);
+        int accentDark = engineAbrp ? ABRP_ACCENT_DARK : (isWazeProfile() ? WAZE_ACCENT_DARK : SPOTIFY_ACCENT_DARK);
 
         ColorStateList controlTint = new ColorStateList(
                 new int[][]{
@@ -386,7 +474,7 @@ public class MainActivity extends AppCompatActivity {
                 new int[]{CONTROL_DISABLED, accent});
 
         RadioButton[] radios = {
-                radioEngine91, radioEngine89, radioEngineWaze, radioEngineAbrp,
+                radioEngine91, radioEngine89, radioEngineWaze, radioEngineWaze59, radioEngineAbrp,
                 radioPrimary, radioSecondary,
                 radioPlayerLhs, radioPlayerRhs,
                 radio89FontStock, radio89FontModerate, radio89FontLarge,
@@ -397,8 +485,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         SwitchMaterial[] switches = {
-                switchOptimise, switchBydLayout, switchAutoResume, switchIconBadge,
-                switch89PreventPortrait, switchWazeWide, switchWazeEv, switchWazeRemoveMic,
+                switchOptimise, switchBydLayout, switchAutoResume, switchIconBadge, switchBydClusterBridge,
+                switch89PreventPortrait, switchWazeWide, switchWazeDisableAudio, switchWazeEv, switchWazeRemoveMic,
                 switchAbrpDirectBattery, switchAbrpAutoDayNight, switchAbrpNativeTts
         };
         for (SwitchMaterial sw : switches) {
@@ -412,6 +500,27 @@ public class MainActivity extends AppCompatActivity {
                         },
                         new int[]{withAlpha(accent, 105), withAlpha(accent, 105), Color.rgb(70, 70, 70)}));
             }
+        }
+
+        SwitchMaterial[] debugSwitches = {switchWazeDebugLogging, switchAbrpDebugLogging};
+        for (SwitchMaterial debugSwitch : debugSwitches) {
+            if (debugSwitch == null) continue;
+            ColorStateList debugTint = new ColorStateList(
+                    new int[][]{
+                            new int[]{-android.R.attr.state_enabled, android.R.attr.state_checked},
+                            new int[]{android.R.attr.state_checked},
+                            new int[]{}
+                    },
+                    new int[]{DEBUG_RED_DARK, DEBUG_RED, CONTROL_UNCHECKED});
+            debugSwitch.setThumbTintList(debugTint);
+            debugSwitch.setTrackTintList(new ColorStateList(
+                    new int[][]{
+                            new int[]{-android.R.attr.state_enabled, android.R.attr.state_checked},
+                            new int[]{android.R.attr.state_checked},
+                            new int[]{}
+                    },
+                    new int[]{withAlpha(DEBUG_RED_DARK, 105), withAlpha(DEBUG_RED, 120), Color.rgb(70, 70, 70)}));
+            debugSwitch.setTextColor(DEBUG_RED);
         }
 
         if (seekIconHue != null) {
@@ -432,7 +541,7 @@ public class MainActivity extends AppCompatActivity {
                 GradientDrawable bg = new GradientDrawable();
                 bg.setShape(GradientDrawable.RECTANGLE);
                 bg.setColor(engineAbrp ? Color.rgb(45, 21, 21)
-                        : (engineWaze ? Color.rgb(15, 34, 42) : Color.rgb(20, 36, 26)));
+                        : (isWazeProfile() ? Color.rgb(15, 34, 42) : Color.rgb(20, 36, 26)));
                 bg.setCornerRadius(dpToPx(10));
                 bg.setStroke(Math.max(1, Math.round(dpToPx(1))), accentDark);
                 parent.setBackground(bg);
@@ -440,7 +549,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         int[] accentButtonIds = {
-                R.id.btnPatchInstall, R.id.btnPrimaryInfo, R.id.btnSecondaryInfo, R.id.btnWazeInfo, R.id.btnAbrpInfo,
+                R.id.btnPatchInstall, R.id.btnPatchSaveApkm, R.id.btnPrimaryInfo, R.id.btnSecondaryInfo, R.id.btnWazeInfo, R.id.btnAbrpInfo,
                 R.id.btnApkMirror, R.id.btnBrowse, R.id.btnDiagnostics, R.id.btnRefresh
         };
         for (int id : accentButtonIds) {
@@ -452,12 +561,86 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private int currentAccent() {
+        return engineAbrp ? ABRP_ACCENT : (isWazeProfile() ? WAZE_ACCENT : SPOTIFY_ACCENT);
+    }
+
+    private int currentAccentTextColor() {
+        return engineAbrp ? Color.WHITE : Color.BLACK;
+    }
+
+    private String currentProductName() {
+        if (engineAbrp) return "ABRP";
+        if (engineWaze59) return "Waze 5.9";
+        if (engineWaze) return "Waze 5.24";
+        return engine89 ? "Spotify 8.9" : "Spotify 9.1";
+    }
+
+    private String currentSourceDescription() {
+        String product = engineAbrp ? "ABRP" : (isWazeProfile() ? "Waze" : "Spotify");
+        return product + " " + currentTargetVersion() + " · APKM/APK source";
+    }
+
+    private String[] currentSourceKeywords() {
+        if (engineAbrp) return new String[]{"abrp", "iternio", "routeplanner"};
+        if (isWazeProfile()) return new String[]{"waze"};
+        return new String[]{"spotify"};
+    }
+
+    private void openBuiltInBrowser() {
+        prefs.edit().putString("browse_method", BrowseChoiceDialog.METHOD_BUILT_IN).apply();
+        Intent i = new Intent(this, FileBrowserActivity.class)
+                .putExtra(FileBrowserActivity.EXTRA_TITLE, "SELECT " + currentProductName().toUpperCase(Locale.ROOT) + " FILE")
+                .putExtra(FileBrowserActivity.EXTRA_SUBTITLE, "Looking for " + currentSourceDescription())
+                .putExtra(FileBrowserActivity.EXTRA_ACCENT, currentAccent())
+                .putExtra(FileBrowserActivity.EXTRA_ON_ACCENT, currentAccentTextColor())
+                .putExtra(FileBrowserActivity.EXTRA_MATCH_VERSIONS, new String[]{currentTargetVersion()})
+                .putExtra(FileBrowserActivity.EXTRA_MATCH_KEYWORDS, currentSourceKeywords());
+        pickBuiltIn.launch(i);
+    }
+
+    private void openExternalPicker() {
+        prefs.edit().putString("browse_method", BrowseChoiceDialog.METHOD_EXTERNAL).apply();
+        // PR #7: ACTION_OPEN_DOCUMENT commonly resolves only to Albums on DiLink 3.
+        // Third-party file managers generally expose ACTION_GET_CONTENT instead.
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.setType("*/*");
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        try {
+            pickApk.launch(Intent.createChooser(i, "Choose the original " + currentProductName() + " file"));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No compatible file manager found. Use the built-in browser instead.", Toast.LENGTH_LONG).show();
+        }
+    }
+
     private int withAlpha(int rgb, int alpha) {
         return Color.argb(alpha, Color.red(rgb), Color.green(rgb), Color.blue(rgb));
     }
 
     private float dpToPx(float dp) {
         return dp * getResources().getDisplayMetrics().density;
+    }
+
+    private boolean isClusterBridgeSelected() {
+        return !isWazeProfile() && !engineAbrp && switchBydClusterBridge != null && switchBydClusterBridge.isChecked();
+    }
+
+    private void applyClusterBridgeUi() {
+        if (switchBydClusterBridge == null) return;
+        boolean spotify = !isWazeProfile() && !engineAbrp;
+        boolean available = spotify;
+        if (txtBydClusterTitle != null) txtBydClusterTitle.setVisibility(available ? View.VISIBLE : View.GONE);
+        switchBydClusterBridge.setVisibility(available ? View.VISIBLE : View.GONE);
+        if (txtBydClusterHint != null) txtBydClusterHint.setVisibility(available ? View.VISIBLE : View.GONE);
+        boolean cluster = available && switchBydClusterBridge.isChecked();
+        radioSecondary.setEnabled(true);
+        if (slotSecondaryCard != null) {
+            slotSecondaryCard.setEnabled(true);
+            slotSecondaryCard.setAlpha(1f);
+        }
+
+        refreshPackages();
+        updatePatchButton();
     }
 
     private void selectSlot(boolean primary) {
@@ -468,8 +651,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateSlotUi() {
         loadingSlotUi = true;
-        if (engineWaze || engineAbrp) {
-            txtSelectedSlotTitle.setText(engineAbrp ? "ABRP Display & Location Improvements Patch" : "WAZE · WIDE-SCREEN PATCH");
+        if (isWazeProfile() || engineAbrp) {
+            txtSelectedSlotTitle.setText(engineAbrp ? "ABRP" : (engineWaze59 ? "Waze 5.9" : "Waze 5.24"));
             loadingSlotUi = false;
             updatePatchButton();
             return;
@@ -494,7 +677,7 @@ public class MainActivity extends AppCompatActivity {
             seekIconHue.setProgress(IconBrandingUtil.normaliseHue(hue));
             txtIconHue.setText(IconBrandingUtil.normaliseHue(hue) + "°");
             switchIconBadge.setChecked(badge);
-            txtSelectedSlotTitle.setText((primary ? "PRIMARY SETTINGS" : "SECONDARY SETTINGS") + " · SPOTIFY 8.9");
+            txtSelectedSlotTitle.setText("Spotify 8.9");
         } else {
             String prefix = primary ? "primary" : "secondary";
             editAppName.setText(prefs.getString(prefix + "_name", primary ? "SpotifyPlus" : "SpotifyPlus2"));
@@ -516,15 +699,16 @@ public class MainActivity extends AppCompatActivity {
             txtIconHue.setText(IconBrandingUtil.normaliseHue(hue) + "°");
             switchIconBadge.setChecked(badge);
             txtOptimiseHint.setText("Installs matched DexMetadata for faster startup.");
-            txtSelectedSlotTitle.setText((primary ? "PRIMARY SETTINGS" : "SECONDARY SETTINGS") + " · SPOTIFY 9.1");
+            txtSelectedSlotTitle.setText("Spotify 9.1");
         }
+
         loadingSlotUi = false;
         updateIconPreview();
         updatePatchButton();
     }
 
     private void saveCurrentSlotUi() {
-        if (engineWaze || engineAbrp || prefs == null || radioPrimary == null) return;
+        if (isWazeProfile() || engineAbrp || prefs == null || radioPrimary == null) return;
         boolean secondary = radioSecondary.isChecked();
         String appName = editAppName.getText().toString().trim();
         if (engine89) {
@@ -560,14 +744,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void ensureStockIconPreview() {
-        if (engineWaze || engineAbrp) return;
+        if (isWazeProfile() || engineAbrp) return;
         if (stockIconPreview == null && sourceApk != null && sourceApk.isFile()) {
             stockIconPreview = IconBrandingUtil.loadStockPreviewFromApkm(sourceApk);
         }
     }
 
     private void updateIconPreview() {
-        if (engineWaze || engineAbrp || imgIconPreview == null) return;
+        if (isWazeProfile() || engineAbrp || imgIconPreview == null) return;
         ensureStockIconPreview();
         if (stockIconPreview != null) {
             android.graphics.Bitmap preview = engine89
@@ -629,57 +813,126 @@ public class MainActivity extends AppCompatActivity {
 
     private File sourceFileForProfile(String profile) {
         File dir = new File(getFilesDir(), "source");
-        if ("waze".equals(profile)) return new File(dir, "waze_source.apkm");
+        if ("waze24".equals(profile) || "waze".equals(profile)) return new File(dir, "waze_source.apkm");
+        if ("waze59".equals(profile)) return new File(dir, "waze_5.9.5.4.apkm");
         if ("abrp".equals(profile)) return new File(dir, "abrp_7.1.7.apkm");
         return new File(dir, "89".equals(profile) ? "spotify_8.9.76.538.apkm" : "spotify_9.1.82.2161.apkm");
     }
 
-    private String currentProfileCode() { return engineAbrp ? "abrp" : (engineWaze ? "waze" : (engine89 ? "89" : "91")); }
-    private String currentPrimaryPackage() { return engineAbrp ? BuildConfigData.ABRP_PACKAGE : (engineWaze ? BuildConfigData.WAZE_PACKAGE : (engine89 ? BuildConfigData.V89_PRIMARY_PACKAGE : BuildConfigData.PRIMARY_PACKAGE)); }
-    private String currentSecondaryPackage() { return engineAbrp ? BuildConfigData.ABRP_PACKAGE : (engineWaze ? BuildConfigData.WAZE_PACKAGE : (engine89 ? BuildConfigData.V89_SECONDARY_PACKAGE : BuildConfigData.SECONDARY_PACKAGE)); }
-    private String currentTargetVersion() { return engineAbrp ? BuildConfigData.ABRP_SUPPORTED_VERSION : (engineWaze ? BuildConfigData.WAZE_SUPPORTED_VERSION : (engine89 ? BuildConfigData.V89_SUPPORTED_VERSION : BuildConfigData.SUPPORTED_VERSION)); }
-    private long currentTargetVersionCode() { return engineAbrp ? BuildConfigData.ABRP_SUPPORTED_VERSION_CODE : (engineWaze ? BuildConfigData.WAZE_SUPPORTED_VERSION_CODE : (engine89 ? BuildConfigData.V89_SUPPORTED_VERSION_CODE : BuildConfigData.SUPPORTED_VERSION_CODE)); }
-    private String currentApkMirrorUrl() { return engineAbrp ? BuildConfigData.ABRP_APKMIRROR_URL : (engineWaze ? BuildConfigData.WAZE_APKMIRROR_URL : (engine89 ? BuildConfigData.V89_APKMIRROR_URL : BuildConfigData.APKMIRROR_URL)); }
-    private boolean currentSourceValid() { return engineAbrp ? sourceValidAbrp : (engineWaze ? sourceValidWaze : (engine89 ? sourceValid89 : sourceValid91)); }
-    private void setCurrentSourceValid(boolean valid) { if (engineAbrp) sourceValidAbrp = valid; else if (engineWaze) sourceValidWaze = valid; else if (engine89) sourceValid89 = valid; else sourceValid91 = valid; }
-    private void setSourceValid(String profile, boolean valid) { if ("abrp".equals(profile)) sourceValidAbrp = valid; else if ("waze".equals(profile)) sourceValidWaze = valid; else if ("89".equals(profile)) sourceValid89 = valid; else sourceValid91 = valid; }
+    private String currentProfileCode() {
+        if (engineAbrp) return "abrp";
+        if (engineWaze59) return "waze59";
+        if (engineWaze) return "waze24";
+        return engine89 ? "89" : "91";
+    }
+
+    private String currentPrimaryPackage() {
+        return engineAbrp ? BuildConfigData.ABRP_PACKAGE
+                : (isWazeProfile() ? BuildConfigData.WAZE_PACKAGE
+                : (engine89 ? BuildConfigData.V89_PRIMARY_PACKAGE : BuildConfigData.PRIMARY_PACKAGE));
+    }
+
+    private String currentSecondaryPackage() {
+        return engineAbrp ? BuildConfigData.ABRP_PACKAGE
+                : (isWazeProfile() ? BuildConfigData.WAZE_PACKAGE
+                : (engine89 ? BuildConfigData.V89_SECONDARY_PACKAGE : BuildConfigData.SECONDARY_PACKAGE));
+    }
+
+    private String currentTargetVersion() {
+        if (engineAbrp) return BuildConfigData.ABRP_SUPPORTED_VERSION;
+        if (engineWaze59) return BuildConfigData.WAZE59_SUPPORTED_VERSION;
+        if (engineWaze) return BuildConfigData.WAZE_SUPPORTED_VERSION;
+        return engine89 ? BuildConfigData.V89_SUPPORTED_VERSION : BuildConfigData.SUPPORTED_VERSION;
+    }
+
+    private long currentTargetVersionCode() {
+        if (engineAbrp) return BuildConfigData.ABRP_SUPPORTED_VERSION_CODE;
+        if (engineWaze59) return BuildConfigData.WAZE59_SUPPORTED_VERSION_CODE;
+        if (engineWaze) return BuildConfigData.WAZE_SUPPORTED_VERSION_CODE;
+        return engine89 ? BuildConfigData.V89_SUPPORTED_VERSION_CODE : BuildConfigData.SUPPORTED_VERSION_CODE;
+    }
+
+    private String currentApkMirrorUrl() {
+        if (engineAbrp) return BuildConfigData.ABRP_APKMIRROR_URL;
+        if (engineWaze59) return BuildConfigData.WAZE59_APKMIRROR_URL;
+        if (engineWaze) return BuildConfigData.WAZE_APKMIRROR_URL;
+        return engine89 ? BuildConfigData.V89_APKMIRROR_URL : BuildConfigData.APKMIRROR_URL;
+    }
+
+    private boolean currentSourceValid() {
+        if (engineAbrp) return sourceValidAbrp;
+        if (engineWaze59) return sourceValidWaze59;
+        if (engineWaze) return sourceValidWaze;
+        return engine89 ? sourceValid89 : sourceValid91;
+    }
+
+    private void setCurrentSourceValid(boolean valid) {
+        if (engineAbrp) sourceValidAbrp = valid;
+        else if (engineWaze59) sourceValidWaze59 = valid;
+        else if (engineWaze) sourceValidWaze = valid;
+        else if (engine89) sourceValid89 = valid;
+        else sourceValid91 = valid;
+    }
+
+    private void setSourceValid(String profile, boolean valid) {
+        if ("abrp".equals(profile)) sourceValidAbrp = valid;
+        else if ("waze59".equals(profile)) sourceValidWaze59 = valid;
+        else if ("waze24".equals(profile) || "waze".equals(profile)) sourceValidWaze = valid;
+        else if ("89".equals(profile)) sourceValid89 = valid;
+        else sourceValid91 = valid;
+    }
+
+    private boolean isWazeProfileCode(String profile) {
+        return "waze24".equals(profile) || "waze59".equals(profile) || "waze".equals(profile);
+    }
+
+    private WazePatchEngine.Validation currentWazeValidation() {
+        return engineWaze59 ? waze59SourceValidation : waze24SourceValidation;
+    }
+
+    private void setWazeValidation(String profile, WazePatchEngine.Validation validation) {
+        if ("waze59".equals(profile)) waze59SourceValidation = validation;
+        else if ("waze24".equals(profile) || "waze".equals(profile)) waze24SourceValidation = validation;
+    }
+
+    private boolean isSupportedWazeVersion(WazePatchEngine.Validation validation, String profile) {
+        if (validation == null || !validation.ok) return false;
+        if ("waze59".equals(profile)) {
+            return BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(validation.versionName)
+                    && validation.versionCode == BuildConfigData.WAZE59_SUPPORTED_VERSION_CODE
+                    && validation.exactPatchProfile;
+        }
+        return BuildConfigData.WAZE_SUPPORTED_VERSION.equals(validation.versionName)
+                && validation.versionCode == BuildConfigData.WAZE_SUPPORTED_VERSION_CODE
+                && validation.exactPatchProfile;
+    }
 
     private boolean isSupportedWazeVersion(WazePatchEngine.Validation validation) {
-        if (validation == null || !validation.ok) return false;
-        return (WAZE_STABLE_VERSION.equals(validation.versionName)
-                && validation.versionCode == WAZE_STABLE_VERSION_CODE)
-                || (WAZE_BETA_VERSION.equals(validation.versionName)
-                && validation.versionCode == WAZE_BETA_VERSION_CODE);
+        return isSupportedWazeVersion(validation, currentProfileCode());
     }
 
     private String supportedWazeDetail(WazePatchEngine.Validation validation) {
-        String channel = WAZE_BETA_VERSION.equals(validation.versionName) ? "beta" : "stable";
-        return "SUPPORTED · Waze " + validation.displayVersion() + " (" + channel + ")"
+        String label = BuildConfigData.WAZE59_SUPPORTED_VERSION.equals(validation.versionName)
+                ? "older / lighter" : "current";
+        return "SUPPORTED · Waze " + validation.displayVersion() + " · " + label
                 + " · " + validation.apkCount + " APK splits";
     }
 
     private void applyWazeStaticText() {
-        if (panelWaze instanceof LinearLayout) {
-            LinearLayout panel = (LinearLayout) panelWaze;
-            if (panel.getChildCount() >= 3 && panel.getChildAt(2) instanceof TextView) {
-                ((TextView) panel.getChildAt(2)).setText(WAZE_USER_DESCRIPTION);
-            }
-        }
-        if (wazeStatusPanel instanceof LinearLayout) {
-            LinearLayout status = (LinearLayout) wazeStatusPanel;
-            if (status.getChildCount() >= 2 && status.getChildAt(1) instanceof LinearLayout) {
-                LinearLayout card = (LinearLayout) status.getChildAt(1);
-                if (card.getChildCount() >= 1 && card.getChildAt(0) instanceof TextView) {
-                    ((TextView) card.getChildAt(0)).setText("SUPPORTED: 5.24.0.1 / 5.24.4.900");
-                }
-            }
-        }
+        String wazeTitle = engineWaze59 ? "WAZE 5.9 · OLDER / LIGHTER" : "WAZE 5.24";
+        if (txtWazeProfileTitle != null) txtWazeProfileTitle.setText(wazeTitle);
+        if (txtWazeSettingsTitle != null) txtWazeSettingsTitle.setText(wazeTitle);
+        if (txtWazeWideDetails != null) txtWazeWideDetails.setText(engineWaze59 ? WAZE59_USER_DESCRIPTION : WAZE24_USER_DESCRIPTION);
+        if (txtWazeAudioDetails != null) txtWazeAudioDetails.setText(R.string.waze_disable_audio_details);
+        if (txtWazeMicDetails != null) txtWazeMicDetails.setText(R.string.waze_remove_microphone_details);
+        if (txtWazeEvDetails != null) txtWazeEvDetails.setText(R.string.waze_ev_details);
+        if (txtWazeDebugDetails != null) txtWazeDebugDetails.setText(R.string.waze_debug_logging_details);
     }
 
     private void importSource(Uri uri) {
         final String profile = currentProfileCode();
         final File target = sourceFileForProfile(profile);
-        final boolean waze = "waze".equals(profile);
+        final boolean waze = isWazeProfileCode(profile);
         final boolean abrp = "abrp".equals(profile);
         final String product = abrp ? "ABRP 7.1.7 file"
                 : (waze ? "Waze APKM" : ("89".equals(profile) ? "Spotify 8.9 APKM" : "Spotify 9.1 APKM"));
@@ -690,9 +943,42 @@ public class MainActivity extends AppCompatActivity {
                 File dir = target.getParentFile();
                 if (!dir.exists() && !dir.mkdirs()) throw new IOException("Cannot create source directory");
                 File tmp = new File(dir, "source_" + profile + ".tmp");
-                try (InputStream in = getContentResolver().openInputStream(uri); OutputStream out = new FileOutputStream(tmp)) {
+                InputStream selectedIn = "file".equalsIgnoreCase(uri.getScheme())
+                        ? new FileInputStream(new File(uri.getPath()))
+                        : getContentResolver().openInputStream(uri);
+                try (InputStream in = selectedIn; OutputStream out = new FileOutputStream(tmp)) {
                     if (in == null) throw new IOException("Cannot read selected file");
                     IoUtil.copy(in, out);
+                }
+
+                // A saved .apkm/.apks produced by this patcher can be selected with the same Browse button.
+                // Reinstall it directly instead of trying to validate it as a stock source APKM.
+                if (PatchedBundleArchive.isPatchedBundle(tmp)) {
+                    PatchedBundleArchive.Info info = PatchedBundleArchive.readInfo(tmp);
+                    if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                        if (!tmp.delete()) tmp.deleteOnExit();
+                        runOnUiThread(() -> {
+                            setBusy(false, "Allow installs from BYD Multi Patcher, then select the saved patched bundle again.");
+                            startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
+                        });
+                        return;
+                    }
+                    PackageInfo existing = installedPackageInfo(info.packageName);
+                    if (existing != null && !isSignedByManager(info.packageName)) {
+                        if (!tmp.delete()) tmp.deleteOnExit();
+                        runOnUiThread(() -> {
+                            setBusy(false, "Existing app has a different signature.");
+                            showSavedBundleSignatureDialog(info);
+                        });
+                        return;
+                    }
+                    File savedInstallDir = new File(getCacheDir(), "saved_bundle_install");
+                    PatchedBundleArchive.Extracted extracted = PatchedBundleArchive.extract(tmp, savedInstallDir);
+                    if (!tmp.delete()) tmp.deleteOnExit();
+                    showProgressFromWorker(95, "INSTALLING SAVED PATCH", "Installing " + info.displayName + " from the saved patched bundle…");
+                    PackageInstallHelper.installSplitApks(this, extracted.apks, extracted.dexMetadata, info.packageName);
+                    runOnUiThread(() -> showProgress(98, "INSTALLING", "Confirm the Android installation prompt if shown, then wait for the saved patched build to install."));
+                    return;
                 }
                 String detail;
                 WazePatchEngine.Validation selectedWazeValidation = null;
@@ -703,10 +989,11 @@ public class MainActivity extends AppCompatActivity {
                 } else if (waze) {
                     WazePatchEngine.Validation validation = WazePatchEngine.validateSource(tmp);
                     if (!validation.ok) { tmp.delete(); throw new IllegalArgumentException(validation.detail); }
-                    if (!isSupportedWazeVersion(validation)) {
+                    if (!isSupportedWazeVersion(validation, profile)) {
                         tmp.delete();
-                        throw new IllegalArgumentException("Unsupported Waze " + validation.displayVersion()
-                                + ". This build supports only " + WAZE_SUPPORTED_VERSIONS + ".");
+                        throw new IllegalArgumentException("Wrong Waze source for this profile. Selected profile requires Waze "
+                                + ("waze59".equals(profile) ? BuildConfigData.WAZE59_SUPPORTED_VERSION : BuildConfigData.WAZE_SUPPORTED_VERSION)
+                                + ", but the file is " + validation.displayVersion() + ".");
                     }
                     selectedWazeValidation = validation;
                     detail = "✓ " + supportedWazeDetail(validation);
@@ -721,7 +1008,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (target.exists() && !target.delete()) throw new IOException("Cannot replace stored source file");
                 if (!tmp.renameTo(target)) throw new IOException("Cannot store selected source file");
-                if (waze) wazeSourceValidation = selectedWazeValidation;
+                if (waze) setWazeValidation(profile, selectedWazeValidation);
                 setSourceValid(profile, true);
                 final WazePatchEngine.Validation finalWazeValidation = selectedWazeValidation;
                 runOnUiThread(() -> {
@@ -743,7 +1030,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
             } catch (Exception e) {
-                if (waze) wazeSourceValidation = null;
+                if (waze) setWazeValidation(profile, null);
                 setSourceValid(profile, false);
                 runOnUiThread(() -> {
                     if (currentProfileCode().equals(profile)) {
@@ -762,10 +1049,10 @@ public class MainActivity extends AppCompatActivity {
         final String profile = currentProfileCode();
         final File target = sourceFileForProfile(profile);
         if (!target.isFile()) {
-            if ("waze".equals(profile)) wazeSourceValidation = null;
+            if (isWazeProfileCode(profile)) setWazeValidation(profile, null);
             setSourceValid(profile, false);
             txtSourceStatus.setText(engineAbrp ? "Choose the ABRP 7.1.7 file to start."
-                    : (engineWaze ? "No Waze APKM selected · supported: " + WAZE_SUPPORTED_VERSIONS
+                    : (isWazeProfile() ? "No Waze " + currentTargetVersion() + " APKM selected."
                     : (engine89 ? "No Spotify 8.9 APKM selected" : "No Spotify 9.1 APKM selected")));
             return;
         }
@@ -777,14 +1064,15 @@ public class MainActivity extends AppCompatActivity {
                     AbrpSourceValidator.Validation v = AbrpSourceValidator.validateSource(target);
                     valid = v.ok;
                     detail = v.ok ? "✓ Correct ABRP 7.1.7 file selected" : "✕ " + v.detail;
-                } else if ("waze".equals(profile)) {
+                } else if (isWazeProfileCode(profile)) {
                     WazePatchEngine.Validation v = WazePatchEngine.validateSource(target);
-                    valid = v.ok && isSupportedWazeVersion(v);
-                    wazeSourceValidation = valid ? v : null;
+                    valid = v.ok && isSupportedWazeVersion(v, profile);
+                    setWazeValidation(profile, valid ? v : null);
                     if (!v.ok) {
                         detail = "✕ " + v.detail;
                     } else if (!valid) {
-                        detail = "✕ Unsupported Waze " + v.displayVersion() + ". Supported: " + WAZE_SUPPORTED_VERSIONS;
+                        String required = "waze59".equals(profile) ? BuildConfigData.WAZE59_SUPPORTED_VERSION : BuildConfigData.WAZE_SUPPORTED_VERSION;
+                        detail = "✕ Wrong Waze version for this profile. Required: " + required + "; selected: " + v.displayVersion();
                     } else {
                         detail = "✓ Stored " + supportedWazeDetail(v);
                     }
@@ -798,18 +1086,18 @@ public class MainActivity extends AppCompatActivity {
                     detail = v.ok ? "✓ Stored " + v.detail : "✕ " + v.detail;
                 }
             } catch (Exception e) {
-                if ("waze".equals(profile)) wazeSourceValidation = null;
+                if (isWazeProfileCode(profile)) setWazeValidation(profile, null);
                 detail = "Source check failed: " + e.getMessage();
             }
             final boolean result = valid;
             final String message = detail;
-            final WazePatchEngine.Validation storedWazeValidation = "waze".equals(profile) ? wazeSourceValidation : null;
+            final WazePatchEngine.Validation storedWazeValidation = isWazeProfileCode(profile) ? ("waze59".equals(profile) ? waze59SourceValidation : waze24SourceValidation) : null;
             setSourceValid(profile, result);
             runOnUiThread(() -> {
                 if (currentProfileCode().equals(profile)) {
                     sourceApk = target;
                     txtSourceStatus.setText(message);
-                    if ("waze".equals(profile) && storedWazeValidation != null) updateWazeSourceHeader(storedWazeValidation);
+                    if (isWazeProfileCode(profile) && storedWazeValidation != null) updateWazeSourceHeader(storedWazeValidation);
                     clearIconPreviews();
                     updateIconPreview();
                     updatePatchButton();
@@ -822,12 +1110,15 @@ public class MainActivity extends AppCompatActivity {
     private void updateWazeSourceHeader(WazePatchEngine.Validation validation) {
         if (validation == null || txtSourceVersion == null) return;
         if (isSupportedWazeVersion(validation)) {
-            String channel = WAZE_BETA_VERSION.equals(validation.versionName) ? "beta" : "stable";
-            txtSourceVersion.setText("Waze " + validation.displayVersion()
-                    + " · SUPPORTED · " + channel + " · Android 10+ · arm64 · 480-640dpi APKM");
+            if (engineWaze59) {
+                txtSourceVersion.setText("Waze " + validation.displayVersion()
+                        + " · LEGACY PROFILE · slower hardware · exact 2-architecture APKM");
+            } else {
+                txtSourceVersion.setText("Waze " + validation.displayVersion()
+                        + " · CURRENT PROFILE · Android 10+ · arm64 · 480-640dpi APKM");
+            }
         } else {
-            txtSourceVersion.setText("Unsupported Waze " + validation.displayVersion()
-                    + " · supported: " + WAZE_SUPPORTED_VERSIONS);
+            txtSourceVersion.setText("Wrong Waze source · this profile requires " + currentTargetVersion());
         }
     }
 
@@ -835,8 +1126,8 @@ public class MainActivity extends AppCompatActivity {
         if (!currentSourceValid()) {
             String needed = engineAbrp
                     ? "Choose the original ABRP 7.1.7 file first."
-                    : engineWaze
-                    ? "Select a valid Waze Android 10+ · arm64 · 480-640dpi APKM first."
+                    : isWazeProfile()
+                    ? "Select a valid Waze " + currentTargetVersion() + " APKM for this profile first."
                     : "Select and verify the supported Spotify " + (engine89 ? "8.9" : "9.1") + " APKM first.";
             Toast.makeText(this, needed, Toast.LENGTH_LONG).show();
             return;
@@ -858,15 +1149,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (engineWaze) {
-            WazePatchEngine.Validation validation = wazeSourceValidation;
+        if (isWazeProfile()) {
+            WazePatchEngine.Validation validation = currentWazeValidation();
             if (validation == null || !validation.ok) {
                 Toast.makeText(this, "Waze source is still being checked. Press Refresh if needed.", Toast.LENGTH_LONG).show();
                 return;
             }
             if (!isSupportedWazeVersion(validation)) {
-                Toast.makeText(this, "Unsupported Waze " + validation.displayVersion()
-                        + ". Supported: " + WAZE_SUPPORTED_VERSIONS, Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "This profile requires Waze " + currentTargetVersion()
+                        + "; selected source is " + validation.displayVersion() + ".", Toast.LENGTH_LONG).show();
                 return;
             }
             continueWazePatch(validation);
@@ -879,36 +1170,93 @@ public class MainActivity extends AppCompatActivity {
             showProfileDowngradeDialog(selectedPkg, installedInfo.versionName);
             return;
         }
+        continueSpotifyPatchAfterChecks();
+    }
+
+    private void patchAndSaveApkm() {
+        if (!currentSourceValid()) {
+            String needed = engineAbrp
+                    ? "Choose the original ABRP 7.1.7 APKM first."
+                    : isWazeProfile()
+                    ? "Select a valid Waze " + currentTargetVersion() + " APKM first."
+                    : "Select and verify the supported Spotify " + (engine89 ? "8.9" : "9.1") + " APKM first.";
+            Toast.makeText(this, needed, Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (Build.VERSION.SDK_INT == 28 && checkSelfPermission("android.permission.WRITE_EXTERNAL_STORAGE") != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.WRITE_EXTERNAL_STORAGE"}, 9142);
+            Toast.makeText(this, "Allow storage access, then press Patch & Save APKM again.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        if (engineAbrp) {
+            patchAbrp(true);
+            return;
+        }
+        if (isWazeProfile()) {
+            WazePatchEngine.Validation validation = currentWazeValidation();
+            if (validation == null || !validation.ok || !isSupportedWazeVersion(validation)) {
+                Toast.makeText(this, "Select the Waze " + currentTargetVersion() + " APKM for this profile first.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            patchWaze(validation, true);
+            return;
+        }
+
+        saveCurrentSlotUi();
+        if (engine89) patchSpotify89(true); else patchSpotify91(true);
+    }
+
+    private void continueSpotifyPatchAfterChecks() {
         saveCurrentSlotUi();
         if (engine89) patchAndInstall89(); else patchAndInstall91();
     }
 
-    private void patchAndInstallAbrp() {
+    private void patchAndInstallAbrp() { patchAbrp(false); }
+
+    private void patchAbrp(boolean saveOnly) {
         final File source = sourceFileForProfile("abrp");
         final boolean directBydBattery = switchAbrpDirectBattery != null && switchAbrpDirectBattery.isChecked();
         final boolean autoDayNightDefault = switchAbrpAutoDayNight != null && switchAbrpAutoDayNight.isChecked();
         final boolean nativeBydTts = switchAbrpNativeTts != null && switchAbrpNativeTts.isChecked();
-        String abrpPatchSummary = "Preparing ABRP display & location improvements"
+        final boolean enableDebugLogging = switchAbrpDebugLogging != null && switchAbrpDebugLogging.isChecked();
+        String abrpPatchSummary = (saveOnly ? "Preparing ABRP APKM export" : "Preparing ABRP display & location improvements")
                 + (directBydBattery ? ", direct BYD battery data" : "")
                 + (autoDayNightDefault ? ", Automatic Day/Night default" : "")
-                + (nativeBydTts ? ", BYD native TTS (Zoe)" : "") + "…";
+                + (nativeBydTts ? ", BYD native multilingual Cerence TTS" : "")
+                + (enableDebugLogging ? ", privacy-safe 5-minute debug log" : "") + "…";
         setBusy(true, abrpPatchSummary);
         showProgress(5, "PREPARING", "Checking which ABRP files this device needs…");
         worker.execute(() -> {
-            File work = new File(getCacheDir(), "install_abrp");
+            File work = new File(getCacheDir(), "build_abrp");
             try {
                 deleteTree(work);
-                if (!work.mkdirs()) throw new IOException("Cannot create ABRP install directory");
+                if (!work.mkdirs()) throw new IOException("Cannot create ABRP build directory");
                 File extractedDir = new File(work, "apks");
-                List<File> installApks = AbrpInstallEngine.prepareInstallBundle(this, source, extractedDir,
-                        directBydBattery, autoDayNightDefault, nativeBydTts, this::postPatchDetail);
+                List<File> signedApks = AbrpInstallEngine.prepareInstallBundle(this, source, extractedDir,
+                        directBydBattery, autoDayNightDefault, nativeBydTts, enableDebugLogging, this::postPatchDetail);
                 String readyDetail = "Display/location fixes are ready"
                         + (directBydBattery ? ", with direct BYD battery injection" : "")
                         + (autoDayNightDefault ? ", and fresh-install Automatic Day/Night appearance" : "")
-                        + (nativeBydTts ? ", and BYD native Cerence TTS using Zoe" : "") + ".";
+                        + (nativeBydTts ? ", and BYD native Cerence TTS with installed voice selection" : "")
+                        + (enableDebugLogging ? ", and privacy-safe startup diagnostics" : "") + ".";
                 showProgressFromWorker(90, "ABRP PATCH READY", readyDetail);
+                if (saveOnly) {
+                    showProgressFromWorker(95, "SAVING APKM", "Saving patched ABRP APKM to Downloads/BYD-Multi-Patcher…");
+                    String savedPath = PatchedBundleArchive.saveApkmToDownloads(this, source, signedApks, null,
+                            "ABRP", BuildConfigData.ABRP_SUPPORTED_VERSION, BuildConfigData.ABRP_PACKAGE,
+                            enableDebugLogging ? "DEBUG-byd" : "byd", "ABRP",
+                            "directBattery=" + directBydBattery + ";autoDayNight=" + autoDayNightDefault
+                                    + ";nativeTts=" + nativeBydTts + ";debug5min=" + enableDebugLogging);
+                    runOnUiThread(() -> {
+                        setBusy(false, "Patched APKM saved: " + savedPath);
+                        showProgress(100, "APKM SAVED", savedPath);
+                        Toast.makeText(this, "Patched ABRP APKM saved to Downloads/BYD-Multi-Patcher.", Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
                 showProgressFromWorker(95, "STARTING INSTALL", "Asking Android to install ABRP…");
-                PackageInstallHelper.installSplitApks(this, installApks, BuildConfigData.ABRP_PACKAGE);
+                PackageInstallHelper.installSplitApks(this, signedApks, BuildConfigData.ABRP_PACKAGE);
                 runOnUiThread(() -> showProgress(98, "INSTALLING",
                         "Confirm the Android installation prompt if shown, then wait for ABRP installation to complete."));
             } catch (Exception e) { reportPatchFailure(e); }
@@ -925,18 +1273,17 @@ public class MainActivity extends AppCompatActivity {
         patchAndInstallWaze(validation);
     }
 
-    private void patchAndInstallWaze(WazePatchEngine.Validation validation) {
-        final File source = sourceFileForProfile("waze");
+    private void patchAndInstallWaze(WazePatchEngine.Validation validation) { patchWaze(validation, false); }
+
+    private void patchWaze(WazePatchEngine.Validation validation, boolean saveOnly) {
+        final String wazeProfile = currentProfileCode();
+        final File source = sourceFileForProfile(wazeProfile);
+        final boolean disableAudioPlayerControls = switchWazeDisableAudio.isChecked();
         final boolean enableEvFeatures = switchWazeEv.isChecked();
         final boolean removeMicrophoneButton = switchWazeRemoveMic.isChecked();
-        if (enableEvFeatures && !validation.tested) {
-            Toast.makeText(this, "EV + CCS2 defaults require the exact tested Waze "
-                    + BuildConfigData.WAZE_SUPPORTED_VERSION + " source bundle.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        setBusy(true, "Starting Waze wide-screen patch…");
-        showProgress(5, "PREPARING",
-                "Opening supported Waze " + validation.displayVersion() + "…");
+        final boolean enableDebugLogging = isWazeProfile() && switchWazeDebugLogging.isChecked();
+        setBusy(true, saveOnly ? "Starting Waze patch for APKM export…" : "Starting Waze wide-screen patch…");
+        showProgress(5, "PREPARING", "Opening supported Waze " + validation.displayVersion() + "…");
         worker.execute(() -> {
             File work = new File(getCacheDir(), "build_waze");
             try {
@@ -944,8 +1291,8 @@ public class MainActivity extends AppCompatActivity {
                 if (!work.mkdirs()) throw new IOException("Cannot create Waze build directory");
                 File signedDir = new File(work, "signed");
                 runOnUiThread(() -> showIndeterminate("PATCHING WAZE", "Applying wide-screen display optimisations…"));
-                List<File> signedApks = WazePatchEngine.buildSignedBundle(source, signedDir, false,
-                        enableEvFeatures, removeMicrophoneButton, message -> {
+                List<File> signedApks = WazePatchEngine.buildSignedBundle(this, source, signedDir, false,
+                        disableAudioPlayerControls, enableEvFeatures, removeMicrophoneButton, enableDebugLogging, message -> {
                     String cleaned = message;
                     if (cleaned != null && cleaned.startsWith("Compatibility mode · Waze ")) {
                         cleaned = "Supported Waze " + validation.displayVersion() + " · applying wide-screen patch…";
@@ -953,6 +1300,21 @@ public class MainActivity extends AppCompatActivity {
                     postPatchDetail(cleaned);
                 });
                 showProgressFromWorker(91, "SIGNING COMPLETE", "Patched base and all Waze splits use the same local certificate.");
+                if (saveOnly) {
+                    showProgressFromWorker(95, "SAVING APKM", "Saving patched Waze APKM to Downloads/BYD-Multi-Patcher…");
+                    String savedPath = PatchedBundleArchive.saveApkmToDownloads(this, source, signedApks, null,
+                            "Waze", validation.versionName, BuildConfigData.WAZE_PACKAGE,
+                            enableDebugLogging ? "DEBUG-byd-wide" : "byd-wide", "Waze",
+                            "wide=true;disableAudio=" + disableAudioPlayerControls
+                                    + ";removeMic=" + removeMicrophoneButton + ";ev=" + enableEvFeatures
+                                    + ";debug5min=" + enableDebugLogging);
+                    runOnUiThread(() -> {
+                        setBusy(false, "Patched APKM saved: " + savedPath);
+                        showProgress(100, "APKM SAVED", savedPath);
+                        Toast.makeText(this, "Patched Waze APKM saved to Downloads/BYD-Multi-Patcher.", Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
                 showProgressFromWorker(95, "STAGING INSTALL", "Creating one Android split-APK installation session…");
                 PackageInstallHelper.installSplitApks(this, signedApks, BuildConfigData.WAZE_PACKAGE);
                 runOnUiThread(() -> showProgress(98, "INSTALLING", "Confirm the Android installation prompt if shown, then wait for Waze installation to complete."));
@@ -960,11 +1322,14 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void patchAndInstall91() {
+    private void patchAndInstall91() { patchSpotify91(false); }
+
+    private void patchSpotify91(boolean saveOnly) {
         boolean secondary = radioSecondary.isChecked();
         boolean optimise = switchOptimise.isChecked();
         boolean bydLayout = switchBydLayout.isChecked();
         boolean autoResume = switchAutoResume.isChecked();
+        boolean clusterBridge = isClusterBridgeSelected();
         boolean playerLeft = radioPlayerLhs.isChecked();
         int iconHue = seekIconHue.getProgress();
         boolean iconBadge = switchIconBadge.isChecked();
@@ -975,7 +1340,7 @@ public class MainActivity extends AppCompatActivity {
         final String finalAppName = appName;
         final File source = sourceFile(false);
 
-        setBusy(true, "Starting Spotify 9.1 patch…");
+        setBusy(true, saveOnly ? "Starting Spotify 9.1 patch for APKM export…" : "Starting Spotify 9.1 patch…");
         showProgress(5, "PREPARING", "Preparing Spotify 9.1.82 APKM bundle…");
         worker.execute(() -> {
             File work = new File(getCacheDir(), "build91");
@@ -985,7 +1350,7 @@ public class MainActivity extends AppCompatActivity {
                 File signedDir = new File(work, "signed");
                 runOnUiThread(() -> showIndeterminate("PATCHING SPOTIFY 9.1", "Applying Spotify 9.1 settings to the APKM bundle…"));
                 List<File> signedApks = ApkPatchEngine91.buildSignedBundle(this, source, signedDir, secondary, finalAppName,
-                        scaleFactor, bydLayout, playerLeft, autoResume, iconHue, iconBadge, this::postPatchDetail);
+                        scaleFactor, bydLayout, playerLeft, autoResume, clusterBridge, iconHue, iconBadge, this::postPatchDetail);
                 showProgressFromWorker(88, "SIGNING COMPLETE", "Spotify 9.1 base and compatible splits signed with one local certificate.");
                 File dm = null;
                 if (optimise) {
@@ -999,19 +1364,38 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     showProgressFromWorker(93, "OPTIMISING", "External startup optimisation skipped; embedded Spotify profile retained.");
                 }
-                showProgressFromWorker(95, "STAGING INSTALL", "Creating one Android split-APK installation session…");
+                if (saveOnly) {
+                    showProgressFromWorker(95, "SAVING APKM", "Saving patched APKM to Downloads/BYD-Multi-Patcher…");
+                    String mode = clusterBridge ? (secondary ? "musib-cluster" : "musia-cluster") : (secondary ? "musib" : "musia");
+                    String savedPath = PatchedBundleArchive.saveApkmToDownloads(this, source, signedApks, dm, "Spotify", BuildConfigData.SUPPORTED_VERSION,
+                            pkg, mode, finalAppName, "scale=" + Math.round(scaleFactor * 100f) + ";player=" + (playerLeft ? "lhs" : "rhs")
+                                    + ";autoResume=" + autoResume + ";clusterBridge=" + clusterBridge);
+                    runOnUiThread(() -> {
+                        setBusy(false, "Patched APKM saved: " + savedPath);
+                        showProgress(100, "APKM SAVED", savedPath);
+                        Toast.makeText(this, "Patched APKM saved to Downloads/BYD-Multi-Patcher.", Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
+                if (clusterBridge) prefs.edit().putString("pending_cluster_start_package", pkg).apply();
+                else prefs.edit().remove("pending_cluster_start_package").apply();
+                showProgressFromWorker(95, "STARTING INSTALL", "Creating Android split-APK installation session…");
                 PackageInstallHelper.installSplitApks(this, signedApks, dm, pkg);
-                runOnUiThread(() -> showProgress(98, "INSTALLING", "Confirm the Android installation prompt if shown, then wait for Spotify installation to complete."));
+                runOnUiThread(() -> showProgress(98, "INSTALLING",
+                        "Confirm the Android installation prompt if shown, then wait for Spotify installation to complete."));
             } catch (Exception e) { reportPatchFailure(e); }
         });
     }
 
-    private void patchAndInstall89() {
+    private void patchAndInstall89() { patchSpotify89(false); }
+
+    private void patchSpotify89(boolean saveOnly) {
         boolean secondary = radioSecondary.isChecked();
         Spotify89ResourceUtil.FontPreset fontPreset = selected89FontPreset();
         boolean rightPanel = radio89PanelRight.isChecked();
         boolean preventPortrait = switch89PreventPortrait.isChecked();
         boolean autoResume = switchAutoResume.isChecked();
+        boolean clusterBridge = isClusterBridgeSelected();
         int iconHue = seekIconHue.getProgress();
         boolean iconBadge = switchIconBadge.isChecked();
         String appName = editAppName.getText().toString().trim();
@@ -1020,7 +1404,7 @@ public class MainActivity extends AppCompatActivity {
         final String finalAppName = appName;
         final File source = sourceFile(true);
 
-        setBusy(true, "Starting Spotify 8.9 patch…");
+        setBusy(true, saveOnly ? "Starting Spotify 8.9 patch for APKM export…" : "Starting Spotify 8.9 patch…");
         showProgress(5, "PREPARING", "Preparing Spotify 8.9 APKM bundle…");
         worker.execute(() -> {
             File work = new File(getCacheDir(), "build89");
@@ -1030,11 +1414,27 @@ public class MainActivity extends AppCompatActivity {
                 File signedDir = new File(work, "signed");
                 runOnUiThread(() -> showIndeterminate("PATCHING SPOTIFY 8.9", "Applying Spotify 8.9 settings to the APKM bundle…"));
                 List<File> signedApks = ApkPatchEngine89.buildSignedBundle(this, source, signedDir, secondary, finalAppName,
-                        fontPreset, rightPanel, preventPortrait, autoResume, iconHue, iconBadge, this::postPatchDetail);
+                        fontPreset, rightPanel, preventPortrait, autoResume, clusterBridge, iconHue, iconBadge, this::postPatchDetail);
                 showProgressFromWorker(91, "SIGNING COMPLETE", "Spotify 8.9 base and compatible splits signed with one local certificate.");
-                showProgressFromWorker(95, "STAGING INSTALL", "Creating one Android split-APK installation session…");
+                if (saveOnly) {
+                    showProgressFromWorker(95, "SAVING APKM", "Saving patched APKM to Downloads/BYD-Multi-Patcher…");
+                    String mode = clusterBridge ? (secondary ? "musib-cluster" : "musia-cluster") : (secondary ? "musib" : "musia");
+                    String savedPath = PatchedBundleArchive.saveApkmToDownloads(this, source, signedApks, null, "Spotify", BuildConfigData.V89_SUPPORTED_VERSION,
+                            pkg, mode, finalAppName, "font=" + fontPreset.name().toLowerCase(Locale.ROOT) + ";panel=" + (rightPanel ? "right" : "left")
+                                    + ";autoResume=" + autoResume + ";clusterBridge=" + clusterBridge);
+                    runOnUiThread(() -> {
+                        setBusy(false, "Patched APKM saved: " + savedPath);
+                        showProgress(100, "APKM SAVED", savedPath);
+                        Toast.makeText(this, "Patched APKM saved to Downloads/BYD-Multi-Patcher.", Toast.LENGTH_LONG).show();
+                    });
+                    return;
+                }
+                if (clusterBridge) prefs.edit().putString("pending_cluster_start_package", pkg).apply();
+                else prefs.edit().remove("pending_cluster_start_package").apply();
+                showProgressFromWorker(95, "STARTING INSTALL", "Creating Android split-APK installation session…");
                 PackageInstallHelper.installSplitApks(this, signedApks, pkg);
-                runOnUiThread(() -> showProgress(98, "INSTALLING", "Confirm the Android installation prompt if shown, then wait for installation to complete."));
+                runOnUiThread(() -> showProgress(98, "INSTALLING",
+                        "Confirm the Android installation prompt if shown, then wait for Spotify installation to complete."));
             } catch (Exception e) { reportPatchFailure(e); }
         });
     }
@@ -1053,7 +1453,8 @@ public class MainActivity extends AppCompatActivity {
         runOnUiThread(() -> {
             if (progressBar != null) progressBar.setIndeterminate(true);
             if (txtProgressStage != null) txtProgressStage.setText(engineAbrp ? "PREPARING ABRP"
-                    : (engineWaze ? "PATCHING WAZE" : (engine89 ? "PATCHING SPOTIFY 8.9" : "PATCHING SPOTIFY 9.1")));
+                    : (isWazeProfile() ? "PATCHING " + (engineWaze59 ? "WAZE 5.9" : "WAZE 5.24")
+                    : (engine89 ? "PATCHING SPOTIFY 8.9" : "PATCHING SPOTIFY 9.1")));
             if (txtProgressPercent != null) txtProgressPercent.setText("…");
             if (txtProgress != null) txtProgress.setText(message);
         });
@@ -1102,7 +1503,7 @@ public class MainActivity extends AppCompatActivity {
             updatePatchButton();
             return;
         }
-        if (engineWaze) {
+        if (isWazeProfile()) {
             PackageInfo waze = installedPackageInfo(BuildConfigData.WAZE_PACKAGE);
             txtWazeInstalled.setText(waze == null ? "Not installed\n" + BuildConfigData.WAZE_PACKAGE
                     : "Installed · " + waze.versionName + "\n" + BuildConfigData.WAZE_PACKAGE);
@@ -1120,6 +1521,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void updatePatchButton() {
         if (btnPatchInstall == null) return;
+        if (btnPatchSaveApkm != null) {
+            btnPatchSaveApkm.setVisibility(View.VISIBLE);
+            btnPatchSaveApkm.setEnabled(currentSourceValid());
+        }
         if (engineAbrp) {
             PackageInfo installed = installedPackageInfo(BuildConfigData.ABRP_PACKAGE);
             if (!currentSourceValid()) {
@@ -1137,10 +1542,10 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         btnPatchInstall.setEnabled(true);
-        if (engineWaze) {
+        if (isWazeProfile()) {
             PackageInfo installed = installedPackageInfo(BuildConfigData.WAZE_PACKAGE);
-            WazePatchEngine.Validation source = wazeSourceValidation;
-            long targetCode = source != null && source.ok ? source.versionCode : BuildConfigData.WAZE_SUPPORTED_VERSION_CODE;
+            WazePatchEngine.Validation source = currentWazeValidation();
+            long targetCode = source != null && source.ok ? source.versionCode : currentTargetVersionCode();
             if (installed == null) btnPatchInstall.setText("PATCH & INSTALL WAZE");
             else if (!isSignedByManager(BuildConfigData.WAZE_PACKAGE)) btnPatchInstall.setText("REINSTALL PATCHED WAZE");
             else if (installed.getLongVersionCode() == targetCode) btnPatchInstall.setText("APPLY WIDE-SCREEN PATCH");
@@ -1226,6 +1631,19 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
+    private void showSavedBundleSignatureDialog(PatchedBundleArchive.Info info) {
+        String extra = "";
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Uninstall existing app first?")
+                .setMessage("The saved patched bundle targets " + info.packageName + ", but the installed app uses a different signing certificate. Android cannot replace it with this saved build." + extra)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Uninstall existing", (d, which) -> {
+                    try { startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + info.packageName))); }
+                    catch (Exception e) { Toast.makeText(this, "Cannot open Android uninstall screen.", Toast.LENGTH_LONG).show(); }
+                })
+                .show();
+    }
+
     private void showProfileDowngradeDialog(String pkg, String installedVersion) {
         String target = engine89 ? "Spotify 8.9" : "Spotify 9.1";
         String slot = radioSecondary.isChecked() ? "Secondary" : "Primary";
@@ -1276,7 +1694,7 @@ public class MainActivity extends AppCompatActivity {
                 .append("Device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append("\n")
                 .append("Android: ").append(Build.VERSION.RELEASE).append(" API ").append(Build.VERSION.SDK_INT).append("\n")
                 .append("Selected profile: ").append(engineAbrp ? "ABRP " + BuildConfigData.ABRP_SUPPORTED_VERSION
-                        : (engineWaze ? "Waze · supported " + WAZE_SUPPORTED_VERSIONS
+                        : (isWazeProfile() ? "Waze " + currentTargetVersion()
                         : "Spotify " + (engine89 ? BuildConfigData.V89_SUPPORTED_VERSION : BuildConfigData.SUPPORTED_VERSION))).append("\n")
                 .append("Source valid: ").append(currentSourceValid()).append("\n");
         if (engineAbrp) {
@@ -1286,23 +1704,29 @@ public class MainActivity extends AppCompatActivity {
                     .append("ABRP source type: APKM universal 120-640dpi split bundle\n")
                     .append("Direct BYD battery data: ").append(switchAbrpDirectBattery != null && switchAbrpDirectBattery.isChecked()).append("\n")
                     .append("Default appearance Automatic (Day/Night): ").append(switchAbrpAutoDayNight != null && switchAbrpAutoDayNight.isChecked()).append("\n")
-                    .append("BYD native Cerence TTS: ").append(switchAbrpNativeTts != null && switchAbrpNativeTts.isChecked()).append("\n");
-        } else if (engineWaze) {
-            WazePatchEngine.Validation v = wazeSourceValidation;
+                    .append("BYD native Cerence TTS: ").append(switchAbrpNativeTts != null && switchAbrpNativeTts.isChecked()).append("\n")
+                    .append("5-minute privacy-safe startup debug log: ").append(switchAbrpDebugLogging != null && switchAbrpDebugLogging.isChecked()).append("\n");
+        } else if (isWazeProfile()) {
+            WazePatchEngine.Validation v = currentWazeValidation();
             s.append(diagnosticStatus("Waze", BuildConfigData.WAZE_PACKAGE)).append("\n")
+                    .append("Waze profile: ").append(engineWaze59 ? "5.9 older / lighter" : "5.24 current").append("\n")
+                    .append("Target Waze version: ").append(currentTargetVersion()).append(" (").append(currentTargetVersionCode()).append(")\n")
                     .append("Waze signed by this patcher: ").append(isInstalled(BuildConfigData.WAZE_PACKAGE) && isSignedByManager(BuildConfigData.WAZE_PACKAGE)).append("\n")
-                    .append("Supported Waze versions: ").append(WAZE_SUPPORTED_VERSIONS).append("\n")
                     .append("Selected Waze source: ").append(v == null ? "not validated" : v.displayVersion()).append("\n")
                     .append("Selected source supported: ").append(isSupportedWazeVersion(v)).append("\n")
-                    .append("Wide-screen optimisations: forced ON\n")
+                    .append("BYD wide-screen layout: forced ON\n")
+                    .append("Disable audio player controls: ").append(switchWazeDisableAudio.isChecked()).append("\n")
+                    .append("Remove search microphone: ").append(switchWazeRemoveMic.isChecked()).append("\n")
                     .append("EV features + CCS2 default: ").append(switchWazeEv.isChecked()).append("\n")
-                    .append("Remove unsupported microphone button: ").append(switchWazeRemoveMic.isChecked()).append("\n")
+                    .append("5-minute privacy-safe startup debug log: ").append(isWazeProfile() && switchWazeDebugLogging.isChecked()).append("\n")
                     .append("Waze source type: APKM split bundle\n");
         } else {
             s.append(diagnosticStatus("Official", BuildConfigData.OFFICIAL_PACKAGE)).append("\n")
                     .append(diagnosticStatus("Primary", currentPrimaryPackage())).append("\n")
                     .append(diagnosticStatus("Secondary", currentSecondaryPackage())).append("\n")
-                    .append("Selected slot: ").append(radioPrimary.isChecked() ? "Primary" : "Secondary").append("\n");
+                    .append("Selected slot: ").append(radioPrimary.isChecked() ? "Primary / com.spotify.musia" : "Secondary / com.spotify.musib").append("\n")
+                    .append("BYD instrument cluster display: ").append(isClusterBridgeSelected()).append("\n")
+                    .append("Stock com.spotify.music is never replaced by this mode.\n");
             if (engine89) {
                 s.append("8.9 font: ").append(selected89FontCode()).append("\n")
                         .append("8.9 side panel: ").append(radio89PanelLeft.isChecked() ? "Left/LHD" : "Right/RHD").append("\n")
@@ -1334,21 +1758,32 @@ public class MainActivity extends AppCompatActivity {
 
     private void setBusy(boolean busy, String message) {
         btnPatchInstall.setEnabled(!busy && (!engineAbrp || currentSourceValid()));
+        if (btnPatchSaveApkm != null) {
+            btnPatchSaveApkm.setVisibility(View.VISIBLE);
+            btnPatchSaveApkm.setEnabled(!busy && currentSourceValid());
+        }
         radioEngine91.setEnabled(!busy);
         radioEngine89.setEnabled(!busy);
         radioEngineWaze.setEnabled(!busy);
+        radioEngineWaze59.setEnabled(!busy);
         radioEngineAbrp.setEnabled(!busy);
+        if (switchBydClusterBridge != null) switchBydClusterBridge.setEnabled(!busy);
+        if (radioSecondary != null) radioSecondary.setEnabled(!busy);
+        if (switchWazeDisableAudio != null) switchWazeDisableAudio.setEnabled(!busy);
         if (switchWazeEv != null) switchWazeEv.setEnabled(!busy);
         if (switchWazeRemoveMic != null) switchWazeRemoveMic.setEnabled(!busy);
+        if (switchWazeDebugLogging != null) switchWazeDebugLogging.setEnabled(!busy);
         if (switchAbrpDirectBattery != null) switchAbrpDirectBattery.setEnabled(!busy);
         if (switchAbrpAutoDayNight != null) switchAbrpAutoDayNight.setEnabled(!busy);
         if (switchAbrpNativeTts != null) switchAbrpNativeTts.setEnabled(!busy);
+        if (switchAbrpDebugLogging != null) switchAbrpDebugLogging.setEnabled(!busy);
         if (txtProgress != null) txtProgress.setText(message);
     }
 
     private static String displayNameForPackage(String packageName) {
         if (BuildConfigData.ABRP_PACKAGE.equals(packageName)) return "ABRP";
         if (BuildConfigData.WAZE_PACKAGE.equals(packageName)) return "Waze";
+        if (BuildConfigData.OFFICIAL_PACKAGE.equals(packageName)) return "Spotify (stock)";
         return "Spotify clone";
     }
 

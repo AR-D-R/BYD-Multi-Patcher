@@ -19,6 +19,7 @@ Compared with stock Waze, the stable 5.24.0.1 patch modifies 16 DEX regions to i
 - The vehicle-type pill gets 20dp of Compose padding.
 - Active-navigation final viewport placement is set to `0.56f`.
 - The start-state drawer collapsed peek height changes from 80dp to 60dp.
+- In the stable 5.24.0.1 report submenu, the `SubmenuButtons` Row itself is placed 56dp higher. This moves both the visible button and its click target above the BYD Android navigation bar; a previous attempt that only enlarged the trailing spacer was proven ineffective on the real head unit. Sparse one-row menus such as **Animal / Traffic / Crash** are also forced onto the same weighted `ItemsGrid` layout used by fuller menus such as **Hazard / Police**, so their choices stay at the top and the raised action row cannot overlap the labels.
 - The audio/music button starts hidden/off instead of being shown by default.
 
 ## APKM flow

@@ -26,10 +26,15 @@ public class InstallResultReceiver extends BroadcastReceiver {
                 .putString("last_install_package", targetPackage == null ? "" : targetPackage)
                 .apply();
         if (status == PackageInstaller.STATUS_SUCCESS) {
+            boolean clusterRelayStarted = maybeStartClusterRelay(context, targetPackage);
             String app = BuildConfigData.ABRP_PACKAGE.equals(targetPackage) ? "ABRP"
                     : (BuildConfigData.WAZE_PACKAGE.equals(targetPackage) ? "Waze" : "SpotifyPlus");
-            Toast.makeText(context, app + " installed successfully.", Toast.LENGTH_LONG).show();
+            String installedMessage = clusterRelayStarted
+                    ? "Spotify installed successfully. Instrument-cluster display is enabled."
+                    : app + " installed successfully.";
+            Toast.makeText(context, installedMessage, Toast.LENGTH_LONG).show();
         } else {
+            clearPendingClusterRelay(context, targetPackage);
             Toast.makeText(context, "Install failed: " + status + (msg == null ? "" : " · " + msg), Toast.LENGTH_LONG).show();
         }
 
@@ -39,5 +44,28 @@ public class InstallResultReceiver extends BroadcastReceiver {
                 .putExtra("message", msg == null ? "" : msg)
                 .putExtra("targetPackage", targetPackage == null ? "" : targetPackage);
         context.sendBroadcast(refresh);
+    }
+
+    private static void clearPendingClusterRelay(Context context, String targetPackage) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("manager_settings", Context.MODE_PRIVATE);
+        String pending = prefs.getString("pending_cluster_start_package", "");
+        if (targetPackage != null && targetPackage.equals(pending)) prefs.edit().remove("pending_cluster_start_package").apply();
+    }
+
+    private static boolean maybeStartClusterRelay(Context context, String targetPackage) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("manager_settings", Context.MODE_PRIVATE);
+        String pending = prefs.getString("pending_cluster_start_package", "");
+        if (targetPackage == null || !targetPackage.equals(pending)) return false;
+        prefs.edit().remove("pending_cluster_start_package").apply();
+        Intent start = new Intent("com.bydspotifymanager.action.START_CLUSTER")
+                .setClassName(targetPackage, targetPackage + ".AutoResumeService");
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 26) context.startForegroundService(start);
+            else context.startService(start);
+            return true;
+        } catch (Throwable t) {
+            Toast.makeText(context, "Spotify installed, but the instrument-cluster service could not start: " + t.getClass().getSimpleName(), Toast.LENGTH_LONG).show();
+            return false;
+        }
     }
 }

@@ -21,6 +21,8 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -53,8 +55,9 @@ public class CerenceTtsBase {
 
     private static final String ZOE_ID = "enu_zoe-ml_embedded-pro_2-2-2_female";
     // ABRP fresh-state aliases. These exact strings already exist in ABRP 7.1.7's
-    // Hermes string table, so the patch can preselect them without expanding HBC.
-    // They are UI/state identifiers only; Cerence still uses ZOE_ID internally.
+    // Hermes string table, so the patch can preselect the BYD engine without expanding HBC.
+    // "en" remains the fresh-install default alias when an English voice is actually
+    // installed, but every Cerence voice reported by the car is exposed to ABRP.
     private static final String ABRP_ENGINE_ALIAS = "native";
     private static final String ABRP_VOICE_ALIAS = "en";
 
@@ -70,6 +73,38 @@ public class CerenceTtsBase {
     private static volatile Object prompter;
     private static volatile Class<?> prompterCallbackClass;
     private static volatile String selectedVoiceId;
+    private static volatile String selectedVoiceAlias = ABRP_VOICE_ALIAS;
+    private static volatile String requestedVoiceAlias;
+    private static volatile Locale requestedLocale;
+    private static volatile List<CerenceVoiceInfo> availableCerenceVoices = Collections.emptyList();
+
+    private static final class CerenceVoiceInfo {
+        final String voiceId;
+        final String voiceName;
+        final String language;
+        final String gender;
+        final Locale locale;
+        final String alias;
+
+        CerenceVoiceInfo(String voiceId, String voiceName, String language, String gender,
+                         Locale locale, String alias) {
+            this.voiceId = voiceId;
+            this.voiceName = voiceName;
+            this.language = language;
+            this.gender = gender;
+            this.locale = locale;
+            this.alias = alias;
+        }
+
+        Voice asAndroidVoice() {
+            return new Voice(alias, locale, Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL,
+                    false, Collections.<String>emptySet());
+        }
+
+        @Override public String toString() {
+            return alias + " -> " + voiceId + " [" + language + ", " + voiceName + ", " + gender + "]";
+        }
+    }
 
     private volatile UtteranceProgressListener progressListener;
     private volatile String currentUtteranceId;
@@ -205,6 +240,13 @@ public class CerenceTtsBase {
         if (asr == null || asr.isEmpty() || voices == null || voices.isEmpty()) {
             throw new IllegalStateException("Cerence Ark returned no languages/voices");
         }
+        availableCerenceVoices = buildVoiceCatalog(voices);
+        if (availableCerenceVoices.isEmpty()) {
+            throw new IllegalStateException("Cerence Ark voices could not be converted for ABRP");
+        }
+        for (CerenceVoiceInfo info : availableCerenceVoices) {
+            AiviTtsLog.i("initCerence: available voice " + info.toString());
+        }
         String asrLanguage = "eng-USA";
         if (!asr.contains(asrLanguage)) asrLanguage = String.valueOf(asr.get(0));
         final String selectedAsr = asrLanguage;
@@ -297,10 +339,11 @@ public class CerenceTtsBase {
         if (names == null || names.isEmpty()) throw new IllegalStateException("Cerence Ark prompter did not become ready");
         AiviTtsLog.i("initCerence: prompter names=" + String.valueOf(names));
 
-        Object chosen = chooseVoice(voices);
+        CerenceVoiceInfo chosen = chooseInitialVoice();
         if (chosen == null) throw new IllegalStateException("Selected BYD Cerence voice was not found");
-        selectedVoiceId = String.valueOf(chosen.getClass().getMethod("getVoiceId").invoke(chosen));
-        AiviTtsLog.i("initCerence: selectedVoice=" + selectedVoiceId);
+        selectedVoiceId = chosen.voiceId;
+        selectedVoiceAlias = chosen.alias;
+        AiviTtsLog.i("initCerence: selectedVoice=" + selectedVoiceId + " alias=" + selectedVoiceAlias);
         final String voiceId = selectedVoiceId;
         final String prompterName = String.valueOf(names.get(0));
         final int stream = Build.VERSION.SDK_INT > 30 ? 15 : 14;
@@ -322,16 +365,219 @@ public class CerenceTtsBase {
         AiviTtsLog.i("initCerence: prompter created successfully stream=" + stream);
     }
 
-    private static Object chooseVoice(List<?> voices) {
-        for (Object v : voices) {
-            Object id = safeInvoke(v, "getVoiceId");
-            if (id != null && ZOE_ID.equals(String.valueOf(id))) return v;
+    private static List<CerenceVoiceInfo> buildVoiceCatalog(List<?> rawVoices) {
+        if (rawVoices == null || rawVoices.isEmpty()) return Collections.emptyList();
+
+        boolean hasZoe = false;
+        for (Object raw : rawVoices) {
+            Object id = safeInvoke(raw, "getVoiceId");
+            if (id != null && ZOE_ID.equals(String.valueOf(id))) {
+                hasZoe = true;
+                break;
+            }
         }
-        for (Object v : voices) {
-            String lang = String.valueOf(safeInvoke(v, "getLanguage")).toLowerCase(Locale.US);
-            if (lang.startsWith("en") || lang.contains("enu")) return v;
+
+        ArrayList<CerenceVoiceInfo> result = new ArrayList<>();
+        HashSet<String> usedAliases = new HashSet<>();
+        boolean englishAliasUsed = false;
+        int fallbackIndex = 1;
+
+        for (Object raw : rawVoices) {
+            String id = cleanValue(safeInvoke(raw, "getVoiceId"));
+            if (id.length() == 0) continue;
+            String language = cleanValue(safeInvoke(raw, "getLanguage"));
+            String voiceName = cleanValue(safeInvoke(raw, "getVoiceName"));
+            String gender = cleanValue(safeInvoke(raw, "getGender"));
+            Locale locale = localeFromCerenceLanguage(language);
+
+            String alias;
+            boolean english = isEnglishLocale(locale, language);
+            if (ZOE_ID.equals(id) || (english && !hasZoe && !englishAliasUsed)) {
+                alias = ABRP_VOICE_ALIAS;
+                englishAliasUsed = true;
+            } else {
+                alias = localeAlias(locale, language);
+                if (alias.length() == 0 || "und".equalsIgnoreCase(alias)) {
+                    alias = "cerence-" + fallbackIndex++;
+                }
+            }
+            alias = uniqueAlias(alias, usedAliases);
+            usedAliases.add(alias.toLowerCase(Locale.US));
+            result.add(new CerenceVoiceInfo(id, voiceName, language, gender, locale, alias));
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    private static String uniqueAlias(String base, Set<String> usedAliases) {
+        String value = base == null ? "" : base.trim();
+        if (value.length() == 0) value = "cerence";
+        if (!usedAliases.contains(value.toLowerCase(Locale.US))) return value;
+        int suffix = 2;
+        while (usedAliases.contains((value + "-" + suffix).toLowerCase(Locale.US))) suffix++;
+        return value + "-" + suffix;
+    }
+
+    private static String cleanValue(Object value) {
+        if (value == null) return "";
+        String s = String.valueOf(value).trim();
+        return "null".equalsIgnoreCase(s) ? "" : s;
+    }
+
+    private static Locale localeFromCerenceLanguage(String value) {
+        String raw = value == null ? "" : value.trim();
+        if (raw.length() == 0) return Locale.ROOT;
+        String[] parts = raw.replace('_', '-').split("-");
+        String language = parts.length > 0 ? isoLanguageToIso2(parts[0]) : "";
+        String country = parts.length > 1 ? isoCountryToIso2(parts[1]) : "";
+        if (language.length() == 0) return Locale.ROOT;
+        return country.length() == 0 ? new Locale(language) : new Locale(language, country);
+    }
+
+    private static String isoLanguageToIso2(String code) {
+        if (code == null) return "";
+        String c = code.trim().toLowerCase(Locale.US);
+        if (c.length() == 0) return "";
+        if (c.length() == 2) return c;
+        // Nuance/Cerence commonly uses ENU in voice/SSML identifiers even though
+        // the Ark language metadata is normally ISO-639-2 ENG.
+        if ("enu".equals(c)) return "en";
+        if (c.length() == 3) {
+            for (String iso2 : Locale.getISOLanguages()) {
+                try {
+                    if (c.equals(new Locale(iso2).getISO3Language().toLowerCase(Locale.US))) return iso2;
+                } catch (Throwable ignored) {}
+            }
+        }
+        return c;
+    }
+
+    private static String isoCountryToIso2(String code) {
+        if (code == null) return "";
+        String c = code.trim().toUpperCase(Locale.US);
+        if (c.length() == 0) return "";
+        if (c.length() == 2) return c;
+        if (c.length() == 3) {
+            for (String iso2 : Locale.getISOCountries()) {
+                try {
+                    Locale candidate = new Locale("", iso2);
+                    if (c.equals(candidate.getISO3Country().toUpperCase(Locale.US))) return iso2;
+                } catch (Throwable ignored) {}
+            }
+        }
+        return c;
+    }
+
+    private static String localeAlias(Locale locale, String rawLanguage) {
+        if (locale != null && locale != Locale.ROOT) {
+            String language = locale.getLanguage();
+            String country = locale.getCountry();
+            if (language != null && language.length() > 0) {
+                return country == null || country.length() == 0
+                        ? language.toLowerCase(Locale.US)
+                        : language.toLowerCase(Locale.US) + "-" + country.toUpperCase(Locale.US);
+            }
+        }
+        String raw = rawLanguage == null ? "" : rawLanguage.trim();
+        return raw.replace('_', '-');
+    }
+
+    private static boolean isEnglishLocale(Locale locale, String rawLanguage) {
+        if (locale != null && "en".equalsIgnoreCase(locale.getLanguage())) return true;
+        String raw = rawLanguage == null ? "" : rawLanguage.toLowerCase(Locale.US);
+        return raw.startsWith("eng") || raw.startsWith("enu") || raw.startsWith("en-") || "en".equals(raw);
+    }
+
+    private static CerenceVoiceInfo findVoiceById(String id) {
+        if (id == null || id.length() == 0) return null;
+        for (CerenceVoiceInfo info : availableCerenceVoices) {
+            if (id.equals(info.voiceId)) return info;
         }
         return null;
+    }
+
+    private static CerenceVoiceInfo findVoiceByAlias(String alias) {
+        if (alias == null || alias.trim().length() == 0) return null;
+        String wanted = alias.trim();
+        for (CerenceVoiceInfo info : availableCerenceVoices) {
+            if (wanted.equalsIgnoreCase(info.alias) || wanted.equals(info.voiceId)) return info;
+        }
+        return null;
+    }
+
+    private static CerenceVoiceInfo findVoiceByLocale(Locale locale) {
+        if (locale == null) return null;
+        String wantedLanguage = locale.getLanguage();
+        String wantedCountry = locale.getCountry();
+        if (wantedLanguage == null || wantedLanguage.length() == 0) return null;
+
+        CerenceVoiceInfo languageOnly = null;
+        for (CerenceVoiceInfo info : availableCerenceVoices) {
+            if (!wantedLanguage.equalsIgnoreCase(info.locale.getLanguage())) continue;
+            if (languageOnly == null) languageOnly = info;
+            if (wantedCountry != null && wantedCountry.length() > 0
+                    && wantedCountry.equalsIgnoreCase(info.locale.getCountry())) return info;
+        }
+        return languageOnly;
+    }
+
+    private static boolean applyVoiceSelection(final CerenceVoiceInfo info, String reason) {
+        if (info == null) return false;
+
+        final Object fw = framework;
+        final ClassLoader cl = navLoader;
+        if (fw == null || cl == null) {
+            selectedVoiceId = info.voiceId;
+            selectedVoiceAlias = info.alias;
+            requestedVoiceAlias = info.alias;
+            requestedLocale = info.locale;
+            AiviTtsLog.i("Cerence voice queued until framework is ready: " + info.toString()
+                    + " reason=" + reason);
+            return true;
+        }
+        try {
+            Object result = callOnMain(new Callable<Object>() {
+                @Override public Object call() throws Exception {
+                    return withLoader(cl, new Callable<Object>() {
+                        @Override public Object call() throws Exception {
+                            return fw.getClass().getMethod("setTtsVoiceId", String.class).invoke(fw, info.voiceId);
+                        }
+                    });
+                }
+            });
+            if (result instanceof Boolean && !((Boolean) result)) {
+                AiviTtsLog.w("Cerence rejected voice " + info.voiceId + " reason=" + reason);
+                return false;
+            }
+            selectedVoiceId = info.voiceId;
+            selectedVoiceAlias = info.alias;
+            requestedVoiceAlias = info.alias;
+            requestedLocale = info.locale;
+            AiviTtsLog.i("Cerence voice selected: " + info.toString() + " reason=" + reason);
+            return true;
+        } catch (Throwable t) {
+            AiviTtsLog.w("Could not select Cerence voice " + info.voiceId + " reason=" + reason, unwrap(t));
+            return false;
+        }
+    }
+
+    private static CerenceVoiceInfo chooseInitialVoice() {
+        CerenceVoiceInfo requested = findVoiceByAlias(requestedVoiceAlias);
+        if (requested != null) return requested;
+
+        requested = findVoiceByLocale(requestedLocale);
+        if (requested != null) return requested;
+
+        requested = findVoiceById(selectedVoiceId);
+        if (requested != null) return requested;
+
+        requested = findVoiceById(ZOE_ID);
+        if (requested != null) return requested;
+
+        requested = findVoiceByAlias(ABRP_VOICE_ALIAS);
+        if (requested != null) return requested;
+
+        List<CerenceVoiceInfo> voices = availableCerenceVoices;
+        return voices.isEmpty() ? null : voices.get(0);
     }
 
     public int speak(final CharSequence text, final int queueMode, Bundle params, final String utteranceId) {
@@ -456,7 +702,27 @@ public class CerenceTtsBase {
         return TextToSpeech.SUCCESS;
     }
     public int setLanguage(Locale locale) {
-        AiviTtsLog.i("setLanguage called locale=" + String.valueOf(locale) + " -> LANG_AVAILABLE (Zoe/en)");
+        AiviTtsLog.i("setLanguage called locale=" + String.valueOf(locale));
+        if (locale == null) return TextToSpeech.LANG_NOT_SUPPORTED;
+        requestedLocale = locale;
+
+        if (availableCerenceVoices.isEmpty()) {
+            AiviTtsLog.i("setLanguage queued until Cerence voice discovery completes: " + locale);
+            return TextToSpeech.LANG_AVAILABLE;
+        }
+
+        CerenceVoiceInfo info = findVoiceByLocale(locale);
+        if (info == null) {
+            AiviTtsLog.w("setLanguage unsupported by installed Cerence voices: " + locale);
+            return TextToSpeech.LANG_NOT_SUPPORTED;
+        }
+        if (!applyVoiceSelection(info, "setLanguage(" + locale + ")")) return TextToSpeech.LANG_NOT_SUPPORTED;
+
+        String requestedCountry = locale.getCountry();
+        if (requestedCountry != null && requestedCountry.length() > 0
+                && requestedCountry.equalsIgnoreCase(info.locale.getCountry())) {
+            return TextToSpeech.LANG_COUNTRY_AVAILABLE;
+        }
         return TextToSpeech.LANG_AVAILABLE;
     }
     public int setPitch(float pitch) {
@@ -468,20 +734,52 @@ public class CerenceTtsBase {
         return TextToSpeech.SUCCESS;
     }
     public int setVoice(Voice voice) {
-        AiviTtsLog.i("setVoice called voice=" + String.valueOf(voice) + " -> Zoe forced");
-        return TextToSpeech.SUCCESS;
+        AiviTtsLog.i("setVoice called voice=" + String.valueOf(voice));
+        if (voice == null) return TextToSpeech.ERROR;
+        requestedVoiceAlias = voice.getName();
+        requestedLocale = voice.getLocale();
+
+        if (availableCerenceVoices.isEmpty()) {
+            AiviTtsLog.i("setVoice queued until Cerence voice discovery completes: " + voice.getName());
+            return TextToSpeech.SUCCESS;
+        }
+
+        CerenceVoiceInfo info = findVoiceByAlias(voice.getName());
+        if (info == null) info = findVoiceByLocale(voice.getLocale());
+        if (info == null) {
+            AiviTtsLog.w("ABRP requested a voice that is not installed: " + String.valueOf(voice));
+            return TextToSpeech.ERROR;
+        }
+        return applyVoiceSelection(info, "setVoice(" + voice.getName() + ")")
+                ? TextToSpeech.SUCCESS : TextToSpeech.ERROR;
     }
 
     public Voice getVoice() {
-        Voice v = new Voice(ABRP_VOICE_ALIAS, Locale.ENGLISH,
+        CerenceVoiceInfo info = findVoiceById(selectedVoiceId);
+        if (info == null) info = findVoiceByAlias(selectedVoiceAlias);
+        if (info == null) info = chooseInitialVoice();
+        if (info != null) {
+            AiviTtsLog.i("getVoice -> " + info.toString());
+            return info.asAndroidVoice();
+        }
+
+        Voice fallback = new Voice(ABRP_VOICE_ALIAS, Locale.ENGLISH,
                 Voice.QUALITY_NORMAL, Voice.LATENCY_NORMAL, false, Collections.<String>emptySet());
-        AiviTtsLog.i("getVoice -> " + ABRP_VOICE_ALIAS + " (Cerence Zoe " + ZOE_ID + ")");
-        return v;
+        AiviTtsLog.i("getVoice -> temporary fallback " + ABRP_VOICE_ALIAS + " while Cerence initializes");
+        return fallback;
     }
 
     public Set<Voice> getVoices() {
-        AiviTtsLog.i("getVoices -> Zoe only");
-        return Collections.singleton(getVoice());
+        List<CerenceVoiceInfo> catalog = availableCerenceVoices;
+        if (catalog.isEmpty()) {
+            AiviTtsLog.i("getVoices -> temporary fallback while Cerence initializes");
+            return Collections.singleton(getVoice());
+        }
+
+        LinkedHashSet<Voice> result = new LinkedHashSet<>();
+        for (CerenceVoiceInfo info : catalog) result.add(info.asAndroidVoice());
+        AiviTtsLog.i("getVoices -> " + result.size() + " installed Cerence voices");
+        return result;
     }
 
     public String getDefaultEngine() {

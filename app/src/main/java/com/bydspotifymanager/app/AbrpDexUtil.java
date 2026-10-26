@@ -23,7 +23,7 @@ final class AbrpDexUtil {
     private static final String STOCK_TTS_DESCRIPTOR = "Landroid/speech/tts/TextToSpeech;";
     // Same UTF-8/UTF-16 length as STOCK_TTS_DESCRIPTOR so the DEX string_data item can
     // be changed in place without rebuilding tables or changing instruction indexes.
-    private static final String BYD_TTS_ZOE_DESCRIPTOR = "Landroid/speech/tts/TextToSpeeci;";
+    private static final String BYD_TTS_CERENCE_DESCRIPTOR = "Landroid/speech/tts/TextToSpeeci;";
 
     // com.mapbox.common.location.LocationServiceImpl.getDeviceLocationProvider(...)
     // code_item instructions start at 0x001aa1b0.
@@ -198,7 +198,7 @@ final class AbrpDexUtil {
                 || input[0] != 'd' || input[1] != 'e' || input[2] != 'x' || input[3] != '\n') {
             throw new IllegalArgumentException("Unexpected ABRP 7.1.7 classes7.dex");
         }
-        byte[] out = replaceDexStringSameLength(input, STOCK_TTS_DESCRIPTOR, BYD_TTS_ZOE_DESCRIPTOR, true);
+        byte[] out = replaceDexStringSameLength(input, STOCK_TTS_DESCRIPTOR, BYD_TTS_CERENCE_DESCRIPTOR, true);
         out = DexUtil.repair(out);
         verifyTextToSpeechRedirect(out);
         return out;
@@ -208,22 +208,22 @@ final class AbrpDexUtil {
         if (dex == null || dex.length != ABRP_CLASSES7_LENGTH)
             throw new IllegalArgumentException("Patched ABRP classes7.dex has unexpected length");
         int oldCount = countDexString(dex, STOCK_TTS_DESCRIPTOR);
-        int zoeCount = countDexString(dex, BYD_TTS_ZOE_DESCRIPTOR);
-        if (oldCount != 0 || zoeCount != 1) {
+        int cerenceCount = countDexString(dex, BYD_TTS_CERENCE_DESCRIPTOR);
+        if (oldCount != 0 || cerenceCount != 1) {
             throw new IllegalArgumentException("ABRP TTS redirect verification failed; stock="
-                    + oldCount + " Zoe=" + zoeCount);
+                    + oldCount + " Cerence=" + cerenceCount);
         }
-        verifyDexStringSortWindow(dex, BYD_TTS_ZOE_DESCRIPTOR);
+        verifyDexStringSortWindow(dex, BYD_TTS_CERENCE_DESCRIPTOR);
     }
 
     static void verifyTextToSpeechStock(byte[] dex) {
         if (dex == null || dex.length != ABRP_CLASSES7_LENGTH)
             throw new IllegalArgumentException("ABRP classes7.dex has unexpected length");
         int oldCount = countDexString(dex, STOCK_TTS_DESCRIPTOR);
-        int zoeCount = countDexString(dex, BYD_TTS_ZOE_DESCRIPTOR);
-        if (oldCount != 1 || zoeCount != 0) {
+        int cerenceCount = countDexString(dex, BYD_TTS_CERENCE_DESCRIPTOR);
+        if (oldCount != 1 || cerenceCount != 0) {
             throw new IllegalArgumentException("ABRP stock TTS verification failed; stock="
-                    + oldCount + " Zoe=" + zoeCount);
+                    + oldCount + " Cerence=" + cerenceCount);
         }
     }
 

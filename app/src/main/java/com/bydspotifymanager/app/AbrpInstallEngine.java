@@ -30,6 +30,9 @@ final class AbrpInstallEngine {
     interface Progress { void onProgress(String message); }
 
     private static final int[] DENSITIES = {120, 160, 213, 240, 320, 480, 640};
+    private static final String DEBUG_PROVIDER = "com.iternio.abrpapp.byddebug.StartupLogProvider";
+    private static final String DEBUG_AUTHORITY = "com.iternio.abrpapp.byddebug.startuplog";
+    private static final String DEBUG_ASSET = "abrp_debug_logger/classes.dex";
 
     private AbrpInstallEngine() {}
 
@@ -37,6 +40,7 @@ final class AbrpInstallEngine {
                                            boolean directBydBattery,
                                            boolean autoDayNightDefault,
                                            boolean nativeBydTts,
+                                           boolean enableDebugLogging,
                                            Progress progress) throws Exception {
         AbrpSourceValidator.Validation validation = AbrpSourceValidator.validateSource(sourceApkm);
         if (!validation.ok) throw new IllegalArgumentException(validation.detail);
@@ -84,9 +88,10 @@ final class AbrpInstallEngine {
                             "Applying ABRP BYD layout, Android location compatibility"
                                     + (directBydBattery ? " and direct BYD battery data" : "")
                                     + (autoDayNightDefault ? " and Automatic Day/Night default" : "")
-                                    + (nativeBydTts ? " and BYD native Cerence TTS" : "") + "…");
+                                    + (nativeBydTts ? " and BYD native Cerence TTS" : "")
+                                    + (enableDebugLogging ? " and privacy-safe 5-minute debug logging" : "") + "…");
                     patched = new File(stage, "base.patched.apk");
-                    patchBaseApk(context, raw, patched, directBydBattery, autoDayNightDefault, nativeBydTts);
+                    patchBaseApk(context, raw, patched, directBydBattery, autoDayNightDefault, nativeBydTts, enableDebugLogging);
                     signingInput = patched;
                 }
 
@@ -114,7 +119,8 @@ final class AbrpInstallEngine {
     }
 
     private static void patchBaseApk(Context context, File input, File output, boolean directBydBattery,
-                                     boolean autoDayNightDefault, boolean nativeBydTts) throws Exception {
+                                     boolean autoDayNightDefault, boolean nativeBydTts,
+                                     boolean enableDebugLogging) throws Exception {
         try (ZipFile source = new ZipFile(input);
              CountingOutputStream counted = new CountingOutputStream(new FileOutputStream(output));
              ZipOutputStream zip = new ZipOutputStream(counted)) {
@@ -124,8 +130,13 @@ final class AbrpInstallEngine {
             boolean locationDexPatched = false;
             boolean ttsDexPatched = false;
             boolean hookNeeded = directBydBattery || nativeBydTts;
+            String debugDexName = hookNeeded ? "classes9.dex" : "classes8.dex";
             if (hookNeeded && source.getEntry("classes8.dex") != null) {
                 throw new IllegalArgumentException("ABRP base.apk already contains classes8.dex; BYD Multi Patcher runtime hook slot is not free");
+            }
+            if (enableDebugLogging && source.getEntry(debugDexName) != null) {
+                throw new IllegalArgumentException("ABRP base.apk already contains " + debugDexName
+                        + "; privacy-safe debug logger slot is not free");
             }
             for (Enumeration<? extends ZipEntry> entries = source.entries(); entries.hasMoreElements();) {
                 ZipEntry entry = entries.nextElement();
@@ -134,6 +145,10 @@ final class AbrpInstallEngine {
                 byte[] data = IoUtil.readAll(source.getInputStream(entry));
                 if ("AndroidManifest.xml".equals(name)) {
                     data = AbrpPatchUtil.patchManifestForByd(data, directBydBattery, nativeBydTts);
+                    if (enableDebugLogging) {
+                        data = ManifestElementUtil.addApplicationProvider(
+                                data, DEBUG_PROVIDER, DEBUG_AUTHORITY, true);
+                    }
                     manifestPatched = true;
                 } else if ("assets/index.android.bundle".equals(name)) {
                     data = AbrpPatchUtil.patchHermesBundle(data, autoDayNightDefault, nativeBydTts);
@@ -166,12 +181,26 @@ final class AbrpInstallEngine {
                 directHook.setMethod(ZipEntry.DEFLATED);
                 writeEntry(zip, counted.count, directHook, directDex);
             }
+
+            if (enableDebugLogging) {
+                byte[] debugDex;
+                try (InputStream in = context.getAssets().open(DEBUG_ASSET)) {
+                    debugDex = IoUtil.readAll(in);
+                }
+                if (debugDex.length < 256 || debugDex[0] != 'd' || debugDex[1] != 'e' || debugDex[2] != 'x') {
+                    throw new IOException("Generated ABRP privacy-safe debug logger DEX is missing or invalid");
+                }
+                ZipEntry debugHook = new ZipEntry(debugDexName);
+                debugHook.setMethod(ZipEntry.DEFLATED);
+                writeEntry(zip, counted.count, debugHook, debugDex);
+            }
         }
-        verifyPatchedBase(output, directBydBattery, autoDayNightDefault, nativeBydTts);
+        verifyPatchedBase(output, directBydBattery, autoDayNightDefault, nativeBydTts, enableDebugLogging);
     }
 
     private static void verifyPatchedBase(File output, boolean directBydBattery,
-                                          boolean autoDayNightDefault, boolean nativeBydTts) throws Exception {
+                                          boolean autoDayNightDefault, boolean nativeBydTts,
+                                          boolean enableDebugLogging) throws Exception {
         if (!output.isFile() || output.length() < 1024) {
             throw new IOException("Patched ABRP base.apk was not created correctly");
         }
@@ -183,12 +212,23 @@ final class AbrpInstallEngine {
             ZipEntry classes7 = zip.getEntry("classes7.dex");
             ZipEntry directHook = zip.getEntry("classes8.dex");
             boolean hookNeeded = directBydBattery || nativeBydTts;
+            String debugDexName = hookNeeded ? "classes9.dex" : "classes8.dex";
+            ZipEntry debugHook = zip.getEntry(debugDexName);
             if (bundle == null || manifest == null || classes3 == null || classes5 == null || classes7 == null
                     || (hookNeeded && directHook == null)
-                    || (!hookNeeded && directHook != null)) {
-                throw new IOException("Patched ABRP base.apk is incomplete or has an unexpected BYD Multi Patcher runtime hook DEX");
+                    || (!hookNeeded && !enableDebugLogging && directHook != null)
+                    || (enableDebugLogging && debugHook == null)
+                    || (!enableDebugLogging && zip.getEntry("classes9.dex") != null)) {
+                throw new IOException("Patched ABRP base.apk is incomplete or has an unexpected BYD Multi Patcher runtime/debug DEX");
             }
-            AbrpPatchUtil.verifyPatchedManifest(IoUtil.readAll(zip.getInputStream(manifest)), directBydBattery, nativeBydTts);
+            byte[] manifestBytes = IoUtil.readAll(zip.getInputStream(manifest));
+            AbrpPatchUtil.verifyPatchedManifest(manifestBytes, directBydBattery, nativeBydTts);
+            int debugProviders = ManifestElementUtil.countApplicationProvider(manifestBytes, DEBUG_PROVIDER);
+            int expectedDebugProviders = enableDebugLogging ? 1 : 0;
+            if (debugProviders != expectedDebugProviders) {
+                throw new IOException("Expected " + expectedDebugProviders
+                        + " ABRP debug provider(s), found " + debugProviders);
+            }
             AbrpPatchUtil.verifyPatchedHermes(IoUtil.readAll(zip.getInputStream(bundle)), autoDayNightDefault, nativeBydTts);
             if (directBydBattery) {
                 AbrpDexUtil.verifyMainApplicationSubclassable(IoUtil.readAll(zip.getInputStream(classes3)));
@@ -200,6 +240,12 @@ final class AbrpInstallEngine {
                 byte[] directDex = IoUtil.readAll(zip.getInputStream(directHook));
                 if (directDex.length < 256 || directDex[0] != 'd' || directDex[1] != 'e' || directDex[2] != 'x') {
                     throw new IOException("Patched ABRP runtime classes8.dex is invalid");
+                }
+            }
+            if (enableDebugLogging) {
+                byte[] debugDex = IoUtil.readAll(zip.getInputStream(debugHook));
+                if (debugDex.length < 256 || debugDex[0] != 'd' || debugDex[1] != 'e' || debugDex[2] != 'x') {
+                    throw new IOException("Patched ABRP privacy-safe debug " + debugDexName + " is invalid");
                 }
             }
         }

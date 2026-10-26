@@ -11,4 +11,6 @@
     <color name="abrp_red">#C52222</color>
     <color name="abrp_blue">#3B82C4</color>
     <color name="abrp_green">#67A63B</color>
+    <color name="debug_red">#EF5350</color>
+    <color name="debug_red_hint">#FF8A80</color>
 </resources>
