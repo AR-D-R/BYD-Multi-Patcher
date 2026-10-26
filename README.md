@@ -1,8 +1,8 @@
-# BYD Multi Patcher v2.0
+# BYD Multi Patcher v2.1
 
 BYD Multi Patcher modifies supported Spotify, Waze and A Better Routeplanner builds for BYD Android head units.
 
-The project started as BYD Spotify Patcher. Version 2 expands it into one patcher for Spotify, Waze and ABRP.
+The project started as BYD Spotify Patcher. Version 2.X expands it into one patcher for Spotify, Waze and ABRP.
 
 ## What changed in v2.1
 
